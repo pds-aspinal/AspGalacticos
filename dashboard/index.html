@@ -9,14 +9,17 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   :root {
-    --pitch: #14342b;
-    --pitch-line: #1f5240;
+    --pitch: #3a0a45;
+    --pitch-line: #55295f;
     --paper: #f7f5ef;
-    --gold: #c9a227;
+    --gold: #f0c419;
     --ink: #14201c;
     --muted: #6b7770;
     --up: #2f7a4f;
     --down: #b5482f;
+    --fpl-green: #00a650;
+    --fpl-red: #d0021b;
+    --fpl-red-pale: #f4c6c9;
   }
   * { box-sizing: border-box; }
   body {
@@ -32,6 +35,10 @@
     position: relative;
     overflow: hidden;
   }
+  @media (max-width: 480px) {
+    header { padding: 1.75rem 1rem 2rem; }
+    main { padding: 1rem; }
+  }
   header::before {
     content: "";
     position: absolute;
@@ -41,7 +48,7 @@
       repeating-linear-gradient(0deg, transparent 0 78px, var(--pitch-line) 78px 79px);
     opacity: 0.4;
   }
-  header .inner { position: relative; max-width: 900px; margin: 0 auto; }
+  header .inner { position: relative; max-width: 1200px; margin: 0 auto; }
   h1 {
     font-family: 'Oswald', sans-serif;
     text-transform: uppercase;
@@ -50,7 +57,7 @@
     margin: 0 0 0.25rem;
   }
   .subtitle { color: #cfe0d6; font-size: 0.95rem; }
-  main { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
+  main { max-width: 1200px; margin: 0 auto; padding: 1.5rem; overflow-x: hidden; }
   .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: -2rem 0 2rem; }
   @media (max-width: 560px) { .cards { grid-template-columns: 1fr; margin-top: -1.5rem; } }
   .card {
@@ -80,16 +87,25 @@
     margin: 2rem 0 1rem;
   }
   table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-  th, td { text-align: left; padding: 0.55rem 0.5rem; border-bottom: 1px solid #e3ddca; }
+  th, td { text-align: left; padding: 0.55rem 0.5rem; border-bottom: 1px solid #e3ddca; white-space: nowrap; }
   th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  #standings-wrap, #prize-wrap, #past-awards-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(20,52,43,0.08);
+  }
+  #standings-wrap table, #prize-wrap table, #past-awards-wrap table { min-width: 480px; }
+  #past-awards-wrap td:last-child, #past-awards-wrap th:last-child { white-space: normal; min-width: 180px; }
   .rank-up { color: var(--up); font-weight: 600; }
   .rank-down { color: var(--down); font-weight: 600; }
   .chart-wrap { background: white; border-radius: 10px; padding: 1rem; box-shadow: 0 6px 18px rgba(20,52,43,0.08); }
   .empty, .error { color: var(--muted); font-style: italic; padding: 1rem 0; }
   footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 0; }
 
-  .tabs { display: flex; gap: 0.5rem; margin-top: 1.2rem; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.2rem; }
   .tab-btn {
     background: transparent;
     border: 1px solid rgba(247,245,239,0.35);
@@ -104,7 +120,7 @@
   }
   .tab-btn.active { background: var(--paper); color: var(--pitch); border-color: var(--paper); }
 
-  .season-picker { display: flex; align-items: center; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+  .season-picker { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin: 1.5rem 0 0.5rem; }
   .season-picker label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .season-picker select {
     font-family: 'Inter', sans-serif;
@@ -116,13 +132,68 @@
   }
   .past-cards { grid-template-columns: repeat(4, 1fr); margin: 1rem 0; }
   @media (max-width: 700px) { .past-cards { grid-template-columns: 1fr 1fr; } }
-  .grid-scroll { overflow-x: auto; background: white; border-radius: 10px; box-shadow: 0 6px 18px rgba(20,52,43,0.08); }
-  .grid-scroll table { min-width: 900px; }
+  @media (max-width: 420px) { .past-cards { grid-template-columns: 1fr; } }
+  .season-prize-total { font-size: 0.9rem; color: var(--muted); margin-left: 0.5rem; }
+  .grid-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background: white;
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(20,52,43,0.08);
+  }
+  .grid-scroll table { width: 100%; min-width: 700px; border-collapse: collapse; table-layout: fixed; font-size: 0.82rem; }
+  .grid-scroll th, .grid-scroll td { padding: 0.4rem 0.3rem; text-align: center; }
   .grid-scroll th:first-child, .grid-scroll td:first-child {
     position: sticky; left: 0; background: white; z-index: 1;
     box-shadow: 1px 0 0 #e3ddca;
+    text-align: center; font-weight: 600;
+    width: 50px;
   }
-  .chip-tag { font-size: 0.65rem; color: var(--muted); display: block; }
+  .grid-scroll .score-row td { border-bottom: none; padding-bottom: 0.2rem; }
+  .grid-scroll .chip-row td {
+    font-size: 0.68rem;
+    color: var(--fpl-red);
+    font-weight: 600;
+    font-style: normal;
+    padding-top: 0;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #e3ddca;
+  }
+  .grid-scroll .total-row td {
+    border-top: 2px solid var(--pitch);
+    font-weight: 700;
+    background: #f2f0e6;
+  }
+  .grid-scroll th { color: var(--pitch); white-space: normal; word-break: break-word; line-height: 1.15; vertical-align: bottom; }
+  .grid-scroll td:first-child, .grid-scroll th:first-child { color: var(--fpl-green); font-weight: 700; }
+  .cell-weekly-best { background: var(--fpl-green); color: white; font-weight: 700; }
+  .cell-weekly-worst { background: var(--fpl-red-pale); color: var(--ink); font-weight: 700; }
+  .cell-season-best { background: var(--gold); color: var(--ink); font-weight: 700; }
+  .cup-tag {
+    display: block;
+    font-size: 0.55rem;
+    font-weight: 600;
+    color: var(--fpl-red);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    line-height: 1.1;
+    white-space: normal;
+  }
+  .cup-winner-col { background: rgba(240,196,25,0.25); border-bottom: 3px solid var(--gold) !important; }
+  .cup-winner-badge {
+    display: block;
+    font-size: 0.55rem;
+    font-weight: 600;
+    color: var(--pitch);
+    white-space: normal;
+    margin-top: 0.1rem;
+  }
+  .scroll-hint { display: none; font-size: 0.75rem; color: var(--muted); padding: 0.4rem 0.6rem 0; }
+  @media (max-width: 700px) {
+    .scroll-hint { display: block; }
+    .grid-scroll table { font-size: 0.72rem; min-width: 550px; }
+    .grid-scroll th, .grid-scroll td { padding: 0.3rem 0.2rem; }
+  }
 </style>
 </head>
 <body>
@@ -166,8 +237,8 @@
 
 <main id="panel-past" style="display:none">
   <div class="season-picker">
-    <label for="season-select">Season</label>
-    <select id="season-select"></select>
+    <h2 id="past-season-heading" style="margin:0; border:none; padding:0;">Season</h2>
+    <span id="season-total-prize" class="season-prize-total"></span>
   </div>
 
   <div id="past-summary-cards" class="cards past-cards"></div>
@@ -177,10 +248,8 @@
 
   <h2 id="past-grid-heading">Full season grid</h2>
   <div id="past-grid-note"></div>
+  <p class="scroll-hint">← Scroll sideways to see all gameweeks →</p>
   <div class="grid-scroll"><div id="past-grid-wrap"><p class="empty">Loading…</p></div></div>
-
-  <h2>All-time prize leaderboard</h2>
-  <div id="alltime-wrap"><p class="empty">Loading…</p></div>
 
   <footer>Historical data — manually reviewed from league records</footer>
 </main>
@@ -201,9 +270,18 @@ async function sb(path) {
   return res.json();
 }
 
+function firstName(fullName) {
+  if (!fullName) return fullName;
+  if (fullName === "John Thrasher & Michelle") return "Michelle";
+  if (fullName.includes("&")) {
+    return fullName.split("&").map(p => p.trim().split(" ")[0]).join(" & ");
+  }
+  return fullName.split(" ")[0];
+}
+
 function teamName(teams, id) {
   const t = teams.find(t => t.team_id === id);
-  return t ? `${t.team_name} (${t.manager_name})` : `Team ${id}`;
+  return t ? `${t.team_name} (${firstName(t.manager_name)})` : `Team ${id}`;
 }
 
 async function render() {
@@ -356,12 +434,9 @@ async function renderPastSeasons() {
     pastData = { summary, awards, snapshots };
 
     const seasons = [...new Set(summary.map(s => s.season))].sort().reverse();
-    const select = document.getElementById("season-select");
-    select.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join("");
-    select.addEventListener("change", () => renderSeasonDetail(select.value));
-    renderSeasonDetail(seasons[0]);
-
-    renderAllTimeLeaderboard(summary);
+    const latestSeason = seasons[0];
+    document.getElementById("past-season-heading").textContent = `${latestSeason} Season`;
+    renderSeasonDetail(latestSeason);
   } catch (err) {
     console.error(err);
     document.getElementById("past-awards-wrap").innerHTML =
@@ -381,7 +456,7 @@ function renderSeasonDetail(season) {
   document.getElementById("past-summary-cards").innerHTML = top4.map((s, i) => `
     <div class="card${i>0 ? " low" : ""}" style="${i>0 ? "border-top-color:var(--pitch)" : ""}">
       <div class="eyebrow">${positionLabels[i]} place</div>
-      <div class="name">${s.manager_name}</div>
+      <div class="name">${firstName(s.manager_name)}</div>
       <div class="pts">${s.total_points ? s.total_points + " pts" : ""}${s.total_prize_money ? " · £" + s.total_prize_money : ""}</div>
     </div>
   `).join("");
@@ -393,12 +468,17 @@ function renderSeasonDetail(season) {
       <tbody>
         ${seasonAwards.map(a => `<tr>
           <td>${a.category}</td>
-          <td>${a.manager_name}</td>
+          <td>${firstName(a.manager_name)}</td>
           <td class="num">${a.amount ? "£"+a.amount : "—"}</td>
           <td style="color:var(--muted); font-size:0.85em">${a.notes || ""}</td>
         </tr>`).join("")}
       </tbody>
     </table>`;
+
+  // Total prize pot for the season = sum of everyone's winnings that season
+  const seasonPotTotal = seasonSummary.reduce((sum, s) => sum + (Number(s.total_prize_money) || 0), 0);
+  document.getElementById("season-total-prize").textContent =
+    seasonPotTotal ? `Total prize pot: £${seasonPotTotal.toFixed(0)}` : "";
 
   // Full grid (if we have gameweek-level data for this season)
   if (!seasonSnaps.length) {
@@ -410,53 +490,112 @@ function renderSeasonDetail(season) {
   document.getElementById("past-grid-note").innerHTML = "";
 
   const gws = [...new Set(seasonSnaps.map(s => s.gw))].sort((a,b) => a-b);
-  const byManager = {};
+  const managers = seasonSummary.map(s => s.manager_name); // column order = league position order
+
+  const byManagerGw = {};
   seasonSnaps.forEach(s => {
-    if (!byManager[s.manager_name]) byManager[s.manager_name] = {};
-    byManager[s.manager_name][s.gw] = s;
+    byManagerGw[`${s.manager_name}|${s.gw}`] = s;
   });
 
-  let headerRow = `<th>Manager</th>` + gws.map(g => `<th class="num">GW${g}</th>`).join("") + `<th class="num">Total</th>`;
-  let bodyRows = "";
-  for (const s of seasonSummary) {
-    const rowData = byManager[s.manager_name] || {};
-    let cells = "";
-    for (const gw of gws) {
-      const cell = rowData[gw];
-      if (!cell || cell.gw_points === null) {
-        cells += `<td class="num">—</td>`;
-      } else {
-        const annot = [cell.chip, cell.deduction ? cell.deduction : null].filter(Boolean).join(" ");
-        cells += `<td class="num">${cell.gw_points}${annot ? `<span class="chip-tag">${annot}</span>` : ""}</td>`;
-      }
+  // Find the single highest score of the whole season, for the strongest highlight
+  let seasonBest = { points: -Infinity, manager: null, gw: null };
+  seasonSnaps.forEach(s => {
+    if (s.gw_points !== null && s.gw_points > seasonBest.points) {
+      seasonBest = { points: s.gw_points, manager: s.manager_name, gw: s.gw };
     }
-    bodyRows += `<tr><td>${s.manager_name}</td>${cells}<td class="num"><strong>${s.total_points ?? "—"}</strong></td></tr>`;
+  });
+
+  // Which gameweek each cup starts, so we can flag it on the grid (short label to fit the narrow GW column)
+  const cupShortNames = {
+    "Cup 1 — LMS Cup": "Cup 1",
+    "Cup 2 — Champion of Champions": "Cup 2",
+    "Cup 3 — FPL League Cup": "Cup 3",
+  };
+  const cupStartByGw = {};
+  seasonAwards.forEach(a => {
+    if (a.start_gw && cupShortNames[a.category]) {
+      cupStartByGw[a.start_gw] = cupStartByGw[a.start_gw]
+        ? cupStartByGw[a.start_gw] + " / " + cupShortNames[a.category]
+        : cupShortNames[a.category];
+    }
+  });
+
+  // Which manager(s) won each cup, so we can highlight their column header
+  const cupWinsByManager = {};
+  seasonAwards.forEach(a => {
+    if (cupShortNames[a.category]) {
+      if (!cupWinsByManager[a.manager_name]) cupWinsByManager[a.manager_name] = [];
+      cupWinsByManager[a.manager_name].push(cupShortNames[a.category]);
+    }
+  });
+
+  let headerRow = `<th>GW</th>` + managers.map(m => {
+    const wins = cupWinsByManager[m];
+    const cls = wins ? ' class="cup-winner-col"' : "";
+    const badge = wins ? `<span class="cup-winner-badge">🏆 ${wins.join(" / ")}</span>` : "";
+    return `<th${cls}>${firstName(m)}${badge}</th>`;
+  }).join("");
+  let bodyRows = "";
+  for (const gw of gws) {
+    // weekly best and worst for this row
+    let weeklyBest = -Infinity;
+    let weeklyWorst = Infinity;
+    managers.forEach(m => {
+      const cell = byManagerGw[`${m}|${gw}`];
+      if (cell && cell.gw_points !== null) {
+        if (cell.gw_points > weeklyBest) weeklyBest = cell.gw_points;
+        if (cell.gw_points < weeklyWorst) weeklyWorst = cell.gw_points;
+      }
+    });
+
+    let scoreCells = "";
+    let chipCells = "";
+    managers.forEach(m => {
+      const cell = byManagerGw[`${m}|${gw}`];
+      if (!cell || cell.gw_points === null) {
+        scoreCells += `<td class="num">—</td>`;
+        chipCells += `<td></td>`;
+        return;
+      }
+      let cls = "num";
+      let prefix = "";
+      if (cell.manager_name === seasonBest.manager && cell.gw === seasonBest.gw) {
+        cls += " cell-season-best";
+        prefix = "★ ";
+      } else if (cell.gw_points === weeklyBest) {
+        cls += " cell-weekly-best";
+      } else if (cell.gw_points === weeklyWorst && weeklyBest !== weeklyWorst) {
+        cls += " cell-weekly-worst";
+      }
+      scoreCells += `<td class="${cls}">${prefix}${cell.gw_points}</td>`;
+      const annot = [cell.chip, cell.deduction ? cell.deduction : null].filter(Boolean).join(" ");
+      chipCells += `<td class="num">${annot || ""}</td>`;
+    });
+
+    const cupTag = cupStartByGw[gw] ? `<span class="cup-tag">${cupStartByGw[gw]}</span>` : "";
+    bodyRows += `<tr class="score-row"><td>GW${gw}</td>${scoreCells}</tr>`;
+    bodyRows += `<tr class="chip-row"><td>${cupTag}</td>${chipCells}</tr>`;
   }
+
+  // Total row at the bottom
+  const totalsByManager = {};
+  seasonSummary.forEach(s => totalsByManager[s.manager_name] = s.total_points);
+  const totalCells = managers.map(m => `<td class="num">${totalsByManager[m] ?? "—"}</td>`).join("");
+  bodyRows += `<tr class="total-row"><td>Total</td>${totalCells}</tr>`;
 
   document.getElementById("past-grid-wrap").innerHTML = `
     <table>
       <thead><tr>${headerRow}</tr></thead>
       <tbody>${bodyRows}</tbody>
-    </table>`;
+    </table>
+    <p style="font-size:0.8rem; color:var(--muted); padding:0.6rem;">
+      <span class="cell-weekly-best" style="padding:0.1em 0.4em; border-radius:3px;">highlight</span> = highest score that gameweek ·
+      <span class="cell-weekly-worst" style="padding:0.1em 0.4em; border-radius:3px;">highlight</span> = lowest score that gameweek ·
+      <span class="cell-season-best" style="padding:0.1em 0.4em; border-radius:3px;">★ highlight</span> = highest score of the season
+    </p>`;
 }
 
-function renderAllTimeLeaderboard(summary) {
-  const totals = {};
-  summary.forEach(s => {
-    if (!s.total_prize_money) return;
-    totals[s.manager_name] = (totals[s.manager_name] || 0) + Number(s.total_prize_money);
-  });
-  const sorted = Object.entries(totals).sort((a,b) => b[1]-a[1]);
-  document.getElementById("alltime-wrap").innerHTML = `
-    <table>
-      <thead><tr><th class="num">#</th><th>Manager</th><th class="num">Total winnings</th></tr></thead>
-      <tbody>
-        ${sorted.map(([mgr, total], i) => `<tr>
-          <td class="num">${i+1}</td><td>${mgr}</td><td class="num">£${total.toFixed(0)}</td>
-        </tr>`).join("")}
-      </tbody>
-    </table>`;
-}
+
 </script>
 </body>
 </html>
