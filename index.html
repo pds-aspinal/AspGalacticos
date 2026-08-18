@@ -119,6 +119,9 @@
   <h2>Points progression</h2>
   <div class="chart-wrap"><canvas id="progressionChart" height="260"></canvas></div>
 
+  <h2>Prize fund</h2>
+  <div id="prize-wrap"><p class="empty">Loading…</p></div>
+
   <footer>Auto-updated weekly via GitHub Actions from the official FPL data</footer>
 </main>
 
@@ -222,6 +225,38 @@ async function render() {
         scales: { y: { title: { display: true, text: "Cumulative points" } } }
       }
     });
+
+    // Prize fund breakdown
+    const rules = await sb("prize_rules?select=*&active=eq.true&order=amount.desc");
+    const labels = {
+      weekly_winner: "Weekly winner (highest score each gameweek)",
+      league_4th: "League — 4th place",
+      league_3rd: "League — 3rd place",
+      league_2nd: "League — 2nd place",
+      league_1st: "League — 1st place (champion)",
+      lms_cup: "Cup 1 — Last Man Standing Cup",
+      champion_of_champions_cup: "Cup 2 — Champion of Champions Cup",
+      fpl_league_cup: "Cup 3 — FPL League Cup",
+      top_score: "Highest single-gameweek score, all season",
+    };
+    let totalPot = 0;
+    let prizeRows = "";
+    for (const r of rules) {
+      const isWeekly = r.frequency === "per_gameweek";
+      const lineTotal = isWeekly ? r.amount * 38 : r.amount;
+      totalPot += lineTotal;
+      prizeRows += `<tr>
+        <td>${labels[r.rule_name] || r.rule_name}</td>
+        <td class="num">£${r.amount}${isWeekly ? " / gw" : ""}</td>
+        <td class="num">£${lineTotal}</td>
+      </tr>`;
+    }
+    document.getElementById("prize-wrap").innerHTML = `
+      <table>
+        <thead><tr><th>Prize</th><th class="num">Amount</th><th class="num">Season total</th></tr></thead>
+        <tbody>${prizeRows}</tbody>
+        <tfoot><tr><td><strong>Total prize pot</strong></td><td></td><td class="num"><strong>£${totalPot}</strong></td></tr></tfoot>
+      </table>`;
 
   } catch (err) {
     console.error(err);
