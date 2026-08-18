@@ -88,6 +88,41 @@
   .chart-wrap { background: white; border-radius: 10px; padding: 1rem; box-shadow: 0 6px 18px rgba(20,52,43,0.08); }
   .empty, .error { color: var(--muted); font-style: italic; padding: 1rem 0; }
   footer { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 2rem 0; }
+
+  .tabs { display: flex; gap: 0.5rem; margin-top: 1.2rem; }
+  .tab-btn {
+    background: transparent;
+    border: 1px solid rgba(247,245,239,0.35);
+    color: var(--paper);
+    padding: 0.45rem 1rem;
+    border-radius: 999px;
+    font-family: 'Oswald', sans-serif;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+  }
+  .tab-btn.active { background: var(--paper); color: var(--pitch); border-color: var(--paper); }
+
+  .season-picker { display: flex; align-items: center; gap: 0.6rem; margin: 1.5rem 0 0.5rem; }
+  .season-picker label { font-size: 0.8rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .season-picker select {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 6px;
+    border: 1px solid #d8d2bd;
+    background: white;
+  }
+  .past-cards { grid-template-columns: repeat(4, 1fr); margin: 1rem 0; }
+  @media (max-width: 700px) { .past-cards { grid-template-columns: 1fr 1fr; } }
+  .grid-scroll { overflow-x: auto; background: white; border-radius: 10px; box-shadow: 0 6px 18px rgba(20,52,43,0.08); }
+  .grid-scroll table { min-width: 900px; }
+  .grid-scroll th:first-child, .grid-scroll td:first-child {
+    position: sticky; left: 0; background: white; z-index: 1;
+    box-shadow: 1px 0 0 #e3ddca;
+  }
+  .chip-tag { font-size: 0.65rem; color: var(--muted); display: block; }
 </style>
 </head>
 <body>
@@ -96,10 +131,14 @@
   <div class="inner">
     <h1>League Table</h1>
     <div class="subtitle" id="league-meta">Loading current standings…</div>
+    <nav class="tabs">
+      <button class="tab-btn active" data-tab="current">This Season</button>
+      <button class="tab-btn" data-tab="past">Past Seasons</button>
+    </nav>
   </div>
 </header>
 
-<main>
+<main id="panel-current">
   <div class="cards">
     <div class="card" id="winner-card">
       <div class="eyebrow">Gameweek winner</div>
@@ -123,6 +162,27 @@
   <div id="prize-wrap"><p class="empty">Loading…</p></div>
 
   <footer>Auto-updated weekly via GitHub Actions from the official FPL data</footer>
+</main>
+
+<main id="panel-past" style="display:none">
+  <div class="season-picker">
+    <label for="season-select">Season</label>
+    <select id="season-select"></select>
+  </div>
+
+  <div id="past-summary-cards" class="cards past-cards"></div>
+
+  <h2>Awards &amp; Cups</h2>
+  <div id="past-awards-wrap"><p class="empty">Loading…</p></div>
+
+  <h2 id="past-grid-heading">Full season grid</h2>
+  <div id="past-grid-note"></div>
+  <div class="grid-scroll"><div id="past-grid-wrap"><p class="empty">Loading…</p></div></div>
+
+  <h2>All-time prize leaderboard</h2>
+  <div id="alltime-wrap"><p class="empty">Loading…</p></div>
+
+  <footer>Historical data — manually reviewed from league records</footer>
 </main>
 
 <script>
@@ -267,6 +327,136 @@ async function render() {
 }
 
 render();
+
+// ── Tab switching ──
+document.querySelectorAll(".tab-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const tab = btn.dataset.tab;
+    document.getElementById("panel-current").style.display = tab === "current" ? "" : "none";
+    document.getElementById("panel-past").style.display = tab === "past" ? "" : "none";
+    if (tab === "past" && !pastSeasonsLoaded) {
+      pastSeasonsLoaded = true;
+      renderPastSeasons();
+    }
+  });
+});
+
+let pastSeasonsLoaded = false;
+let pastData = null; // cached fetch results
+
+async function renderPastSeasons() {
+  try {
+    const [summary, awards, snapshots] = await Promise.all([
+      sb("past_season_summary?select=*&order=season.desc,league_position.asc"),
+      sb("past_season_awards?select=*&order=season.desc"),
+      sb("past_season_snapshots?select=*"),
+    ]);
+    pastData = { summary, awards, snapshots };
+
+    const seasons = [...new Set(summary.map(s => s.season))].sort().reverse();
+    const select = document.getElementById("season-select");
+    select.innerHTML = seasons.map(s => `<option value="${s}">${s}</option>`).join("");
+    select.addEventListener("change", () => renderSeasonDetail(select.value));
+    renderSeasonDetail(seasons[0]);
+
+    renderAllTimeLeaderboard(summary);
+  } catch (err) {
+    console.error(err);
+    document.getElementById("past-awards-wrap").innerHTML =
+      `<p class="error">Couldn't load past seasons (${err.message}).</p>`;
+  }
+}
+
+function renderSeasonDetail(season) {
+  const { summary, awards, snapshots } = pastData;
+  const seasonSummary = summary.filter(s => s.season === season).sort((a,b) => a.league_position - b.league_position);
+  const seasonAwards = awards.filter(a => a.season === season);
+  const seasonSnaps = snapshots.filter(s => s.season === season);
+
+  // Summary cards — top 4 league finishers
+  const top4 = seasonSummary.slice(0, 4);
+  const positionLabels = ["1st", "2nd", "3rd", "4th"];
+  document.getElementById("past-summary-cards").innerHTML = top4.map((s, i) => `
+    <div class="card${i>0 ? " low" : ""}" style="${i>0 ? "border-top-color:var(--pitch)" : ""}">
+      <div class="eyebrow">${positionLabels[i]} place</div>
+      <div class="name">${s.manager_name}</div>
+      <div class="pts">${s.total_points ? s.total_points + " pts" : ""}${s.total_prize_money ? " · £" + s.total_prize_money : ""}</div>
+    </div>
+  `).join("");
+
+  // Awards & cups table
+  document.getElementById("past-awards-wrap").innerHTML = `
+    <table>
+      <thead><tr><th>Category</th><th>Winner</th><th class="num">Prize</th><th>Notes</th></tr></thead>
+      <tbody>
+        ${seasonAwards.map(a => `<tr>
+          <td>${a.category}</td>
+          <td>${a.manager_name}</td>
+          <td class="num">${a.amount ? "£"+a.amount : "—"}</td>
+          <td style="color:var(--muted); font-size:0.85em">${a.notes || ""}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+
+  // Full grid (if we have gameweek-level data for this season)
+  if (!seasonSnaps.length) {
+    document.getElementById("past-grid-note").innerHTML =
+      `<p class="empty">No weekly gameweek data available for ${season} — season summary and awards only.</p>`;
+    document.getElementById("past-grid-wrap").innerHTML = "";
+    return;
+  }
+  document.getElementById("past-grid-note").innerHTML = "";
+
+  const gws = [...new Set(seasonSnaps.map(s => s.gw))].sort((a,b) => a-b);
+  const byManager = {};
+  seasonSnaps.forEach(s => {
+    if (!byManager[s.manager_name]) byManager[s.manager_name] = {};
+    byManager[s.manager_name][s.gw] = s;
+  });
+
+  let headerRow = `<th>Manager</th>` + gws.map(g => `<th class="num">GW${g}</th>`).join("") + `<th class="num">Total</th>`;
+  let bodyRows = "";
+  for (const s of seasonSummary) {
+    const rowData = byManager[s.manager_name] || {};
+    let cells = "";
+    for (const gw of gws) {
+      const cell = rowData[gw];
+      if (!cell || cell.gw_points === null) {
+        cells += `<td class="num">—</td>`;
+      } else {
+        const annot = [cell.chip, cell.deduction ? cell.deduction : null].filter(Boolean).join(" ");
+        cells += `<td class="num">${cell.gw_points}${annot ? `<span class="chip-tag">${annot}</span>` : ""}</td>`;
+      }
+    }
+    bodyRows += `<tr><td>${s.manager_name}</td>${cells}<td class="num"><strong>${s.total_points ?? "—"}</strong></td></tr>`;
+  }
+
+  document.getElementById("past-grid-wrap").innerHTML = `
+    <table>
+      <thead><tr>${headerRow}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`;
+}
+
+function renderAllTimeLeaderboard(summary) {
+  const totals = {};
+  summary.forEach(s => {
+    if (!s.total_prize_money) return;
+    totals[s.manager_name] = (totals[s.manager_name] || 0) + Number(s.total_prize_money);
+  });
+  const sorted = Object.entries(totals).sort((a,b) => b[1]-a[1]);
+  document.getElementById("alltime-wrap").innerHTML = `
+    <table>
+      <thead><tr><th class="num">#</th><th>Manager</th><th class="num">Total winnings</th></tr></thead>
+      <tbody>
+        ${sorted.map(([mgr, total], i) => `<tr>
+          <td class="num">${i+1}</td><td>${mgr}</td><td class="num">£${total.toFixed(0)}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>`;
+}
 </script>
 </body>
 </html>
