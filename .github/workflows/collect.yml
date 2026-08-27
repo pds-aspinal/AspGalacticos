@@ -24,3 +24,10 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
         run: python collector.py
+
+      - name: Run cup automation
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
+        run: python cups.py
