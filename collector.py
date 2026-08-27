@@ -22,6 +22,15 @@ FPL_BASE = "https://fantasy.premierleague.com/api"
 # FPL's API will 403 requests with no user-agent
 HEADERS = {"User-Agent": "Mozilla/5.0 (fpl-league-tracker)"}
 
+# FPL's internal chip names -> short codes, matching the abbreviations already
+# used throughout the dashboard (WC/FH/BB/TC)
+CHIP_CODES = {
+    "wildcard": "WC",
+    "freehit": "FH",
+    "bboost": "BB",
+    "3xc": "TC",
+}
+
 
 def env(name: str) -> str:
     val = os.environ.get(name)
@@ -48,7 +57,6 @@ def fetch_league_teams(league_id: str) -> list[dict]:
     """
     url = f"{FPL_BASE}/leagues-classic/{league_id}/standings/"
     data = fetch_json(url)
-
     teams = []
     for entry in data["standings"]["results"]:
         teams.append(
@@ -84,17 +92,27 @@ def fetch_league_teams(league_id: str) -> list[dict]:
 
 
 def fetch_team_history(team_id: int) -> list[dict]:
-    """Returns [{gw, gw_points, total_points}, ...] for every completed gameweek."""
+    """Returns [{gw, gw_points, total_points, chip, transfer_cost}, ...] for every completed gameweek."""
     url = f"{FPL_BASE}/entry/{team_id}/history/"
     data = fetch_json(url)
+
+    # Chips are returned as a separate list: [{"name": "wildcard", "event": 8}, ...]
+    # Build a lookup of which chip (if any) was played each gameweek.
+    chip_by_gw = {}
+    for chip in data.get("chips", []):
+        chip_by_gw[chip["event"]] = CHIP_CODES.get(chip["name"], chip["name"])
+
     rows = []
     for gw in data["current"]:
+        cost = gw.get("event_transfers_cost", 0)
         rows.append(
             {
                 "gw": gw["event"],
                 "team_id": team_id,
                 "gw_points": gw["points"],
                 "total_points": gw["total_points"],
+                "chip": chip_by_gw.get(gw["event"]),
+                "transfer_cost": cost if cost else None,
             }
         )
     return rows
@@ -114,7 +132,6 @@ def supabase_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
     if not resp.ok:
         print(f"Supabase upsert to {table} failed: {resp.status_code} {resp.text}", file=sys.stderr)
         resp.raise_for_status()
-
 
 def main():
     global SUPABASE_URL, SUPABASE_SERVICE_KEY
