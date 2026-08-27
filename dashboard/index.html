@@ -90,14 +90,14 @@
   th, td { text-align: left; padding: 0.55rem 0.5rem; border-bottom: 1px solid #e3ddca; white-space: nowrap; }
   th { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-  #standings-wrap, #prize-wrap, #past-awards-wrap {
+  #standings-wrap, #prize-wrap, #past-awards-wrap, #gw-prizes-wrap {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     background: white;
     border-radius: 10px;
     box-shadow: 0 6px 18px rgba(20,52,43,0.08);
   }
-  #standings-wrap table, #prize-wrap table, #past-awards-wrap table { min-width: 480px; }
+  #standings-wrap table, #prize-wrap table, #past-awards-wrap table, #gw-prizes-wrap table { min-width: 480px; }
   #past-awards-wrap td:last-child, #past-awards-wrap th:last-child { white-space: normal; min-width: 180px; }
   .rank-up { color: var(--up); font-weight: 600; }
   .rank-down { color: var(--down); font-weight: 600; }
@@ -226,8 +226,11 @@
   <h2>Standings</h2>
   <div id="standings-wrap"><p class="empty">Loading…</p></div>
 
-  <h2>Points progression</h2>
-  <div class="chart-wrap"><canvas id="progressionChart" height="260"></canvas></div>
+  <h2>Weekly Prize Winners</h2>
+  <div id="gw-prizes-wrap"><p class="empty">Loading…</p></div>
+
+  <h2>League Position</h2>
+  <div class="chart-wrap"><canvas id="positionChart" height="260"></canvas></div>
 
   <h2>Full Season Grid</h2>
   <p class="scroll-hint">← Scroll sideways to see all gameweeks →</p>
@@ -416,13 +419,38 @@ async function render() {
         <tbody>${rows}</tbody>
       </table>`;
 
-    // Progression chart — cumulative total_points per team across all gameweeks
+    // Fetch prize rules early — needed both for the weekly-winner amount below and the Prize fund table further down
     const gws = [...new Set(rankings.map(r => r.gw))].sort((a, b) => a - b);
-    const datasets = teams.map((t, i) => {
+    const rules = await sb("prize_rules?select=*&active=eq.true&order=amount.desc");
+    const weeklyWinnerAmount = rules.find(r => r.rule_name === "weekly_winner")?.amount ?? null;
+
+    // Weekly Prize Winners table — who had the highest score each individual gameweek
+    // (NOT the same as league_rank, which reflects cumulative standing after that gameweek)
+    let gwPrizeRows = "";
+    for (const gw of gws) {
+      const gwRows = rankings.filter(r => r.gw === gw);
+      if (!gwRows.length) continue;
+      const gwWinner = [...gwRows].sort((a, b) => b.gw_points - a.gw_points)[0];
+      gwPrizeRows += `<tr>
+        <td>GW${gw}</td>
+        <td>${teamName(teams, gwWinner.team_id)}</td>
+        <td class="num">${gwWinner.gw_points}</td>
+        <td class="num">${weeklyWinnerAmount ? "£" + weeklyWinnerAmount : "—"}</td>
+      </tr>`;
+    }
+    document.getElementById("gw-prizes-wrap").innerHTML = gwPrizeRows
+      ? `<table>
+          <thead><tr><th>Gameweek</th><th>Winner</th><th class="num">Points</th><th class="num">Prize</th></tr></thead>
+          <tbody>${gwPrizeRows}</tbody>
+        </table>`
+      : `<p class="empty">No gameweeks recorded yet.</p>`;
+
+    // League position chart — each team's league rank after every gameweek (1 = top, shown at the top of the y-axis)
+    const positionDatasets = teams.map((t, i) => {
       const hue = (i * 47) % 360;
       const points = gws.map(gw => {
         const row = rankings.find(r => r.gw === gw && r.team_id === t.team_id);
-        return row ? row.total_points : null;
+        return row ? row.league_rank : null;
       });
       return {
         label: t.team_name,
@@ -435,18 +463,24 @@ async function render() {
       };
     });
 
-    new Chart(document.getElementById("progressionChart"), {
+    new Chart(document.getElementById("positionChart"), {
       type: "line",
-      data: { labels: gws.map(g => `GW${g}`), datasets },
+      data: { labels: gws.map(g => `GW${g}`), datasets: positionDatasets },
       options: {
         responsive: true,
         plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 11 } } } },
-        scales: { y: { title: { display: true, text: "Cumulative points" } } }
+        scales: {
+          y: {
+            reverse: true,
+            min: 1,
+            max: teams.length,
+            ticks: { stepSize: 1 },
+            title: { display: true, text: "League position" }
+          }
+        }
       }
     });
 
-    // Prize fund breakdown
-    const rules = await sb("prize_rules?select=*&active=eq.true&order=amount.desc");
     const labels = {
       weekly_winner: "Weekly winner (highest score each gameweek)",
       league_4th: "League — 4th place",
