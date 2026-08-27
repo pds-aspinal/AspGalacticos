@@ -38,9 +38,17 @@ def fetch_json(url: str) -> dict:
 
 
 def fetch_league_teams(league_id: str) -> list[dict]:
-    """Returns [{team_id, manager_name, team_name}, ...] for every team in the league."""
+    """Returns [{team_id, manager_name, team_name}, ...] for every team in the league.
+
+    Before a season starts (or before GW1 has finished), the `standings`
+    section of this endpoint is empty — FPL hasn't calculated any ranking
+    yet. Anyone who has already joined the league instead shows up under
+    `new_entries`. We use standings once they exist, and fall back to
+    new_entries so pre-season joiners still get picked up.
+    """
     url = f"{FPL_BASE}/leagues-classic/{league_id}/standings/"
     data = fetch_json(url)
+
     teams = []
     for entry in data["standings"]["results"]:
         teams.append(
@@ -50,11 +58,23 @@ def fetch_league_teams(league_id: str) -> list[dict]:
                 "team_name": entry["entry_name"],
             }
         )
-    # NOTE: standings/ only returns page 1 by default (usually 50 entries).
-    # For a private league this is virtually always enough, but if
-    # data["standings"]["has_next"] is True and your league is bigger than
-    # that, you'd need to paginate with ?page_standings=2 etc.
-    if data["standings"].get("has_next"):
+
+    if not teams:
+        print("Standings empty (season likely hasn't started) — using new_entries instead.")
+        for entry in data.get("new_entries", {}).get("results", []):
+            teams.append(
+                {
+                    "team_id": entry["entry"],
+                    "manager_name": f"{entry['player_first_name']} {entry['player_last_name']}",
+                    "team_name": entry["entry_name"],
+                }
+            )
+
+    # NOTE: standings/ and new_entries/ each only return page 1 by default
+    # (usually 50 entries). Fine for any private league, but if
+    # has_next is True and yours is bigger than that, you'd need to
+    # paginate with ?page_standings=2 / ?page_new_entries=2 etc.
+    if data["standings"].get("has_next") or data.get("new_entries", {}).get("has_next"):
         print(
             "Warning: league has more teams than one page returned — "
             "pagination not implemented, some teams may be missing.",
