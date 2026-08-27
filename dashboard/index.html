@@ -194,6 +194,31 @@
     .grid-scroll table { font-size: 0.72rem; min-width: 550px; }
     .grid-scroll th, .grid-scroll td { padding: 0.3rem 0.2rem; }
   }
+  .cups-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem; }
+  @media (max-width: 900px) { .cups-grid { grid-template-columns: 1fr; } }
+  .cup-card.cup-decided { border-top-color: var(--gold); }
+  .cup-status { font-size: 0.85rem; color: var(--muted); margin: 0.4rem 0 0.7rem; }
+  .cup-winner-banner {
+    background: var(--gold);
+    color: var(--ink);
+    font-weight: 700;
+    padding: 0.5rem 0.7rem;
+    border-radius: 6px;
+    margin: 0.5rem 0 0.7rem;
+    font-size: 0.9rem;
+  }
+  .cup-list { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+  .cup-list li {
+    display: flex; justify-content: space-between; gap: 0.5rem;
+    padding: 0.35rem 0; border-bottom: 1px solid #efece0;
+  }
+  .cup-list li:last-child { border-bottom: none; }
+  .cup-list .out-gw { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+  .cup-match { padding: 0.4rem 0; border-bottom: 1px solid #efece0; font-size: 0.85rem; }
+  .cup-match:last-child { border-bottom: none; }
+  .cup-match .round-label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.03em; }
+  .cup-match .vs-line { display: flex; justify-content: space-between; margin-top: 0.15rem; gap: 0.4rem; }
+  .cup-match .winner-name { font-weight: 700; color: var(--fpl-green); }
 </style>
 </head>
 <body>
@@ -226,15 +251,18 @@
   <h2>Standings</h2>
   <div id="standings-wrap"><p class="empty">Loading…</p></div>
 
-  <h2>Weekly Prize Winners</h2>
+  <h2>Prizes Won This Season</h2>
   <div id="gw-prizes-wrap"><p class="empty">Loading…</p></div>
-
-  <h2>League Position</h2>
-  <div class="chart-wrap"><canvas id="positionChart" height="260"></canvas></div>
 
   <h2>Full Season Grid</h2>
   <p class="scroll-hint">← Scroll sideways to see all gameweeks →</p>
   <div class="grid-scroll"><div id="current-grid-wrap"><p class="empty">Loading…</p></div></div>
+
+  <h2>League Position</h2>
+  <div class="chart-wrap"><canvas id="positionChart" height="260"></canvas></div>
+
+  <h2>Cups</h2>
+  <div id="cups-wrap" class="cups-grid"><p class="empty">Loading…</p></div>
 
   <h2>Prize fund</h2>
   <div id="prize-wrap"><p class="empty">Loading…</p></div>
@@ -394,6 +422,42 @@ async function render() {
     document.querySelector("#loser-card .name").textContent = teamName(teams, loser.team_id);
     document.querySelector("#loser-card .pts").textContent = `${loser.gw_points} pts this gameweek`;
 
+    // Fetch prize rules and cup winners first — needed for the Total Winnings
+    // column on the standings table below, and for the Prizes Won section.
+    const gws = [...new Set(rankings.map(r => r.gw))].sort((a, b) => a - b);
+    const rules = await sb("prize_rules?select=*&active=eq.true&order=amount.desc");
+    const weeklyWinnerAmount = rules.find(r => r.rule_name === "weekly_winner")?.amount ?? null;
+    const cupWinners = await sb("cup_winners?select=*").catch(() => []); // table may not exist yet if cup automation isn't deployed
+
+    // Map a cup's display name to its prize_rules row, so a decided cup's
+    // prize money counts toward a team's total winnings.
+    const cupRuleNames = {
+      "Cup 1 — LMS Cup": "lms_cup",
+      "Cup 2 — Champion of Champions": "champion_of_champions_cup",
+      "Cup 3 — FPL League Cup": "fpl_league_cup",
+    };
+    const cupPrizeByTeamId = {};
+    cupWinners.forEach(w => {
+      const ruleName = cupRuleNames[w.cup_name];
+      const amount = rules.find(r => r.rule_name === ruleName)?.amount;
+      if (amount) cupPrizeByTeamId[w.team_id] = (cupPrizeByTeamId[w.team_id] || 0) + amount;
+    });
+
+    // Weekly wins per team, from every gameweek collected so far
+    const weeklyWinCountByTeamId = {};
+    for (const gw of gws) {
+      const gwRows = rankings.filter(r => r.gw === gw);
+      if (!gwRows.length) continue;
+      const gwWinner = [...gwRows].sort((a, b) => b.gw_points - a.gw_points)[0];
+      weeklyWinCountByTeamId[gwWinner.team_id] = (weeklyWinCountByTeamId[gwWinner.team_id] || 0) + 1;
+    }
+
+    function totalWinnings(teamId) {
+      const weekly = (weeklyWinCountByTeamId[teamId] || 0) * (weeklyWinnerAmount || 0);
+      const cups = cupPrizeByTeamId[teamId] || 0;
+      return weekly + cups;
+    }
+
     // Standings table
     let rows = "";
     for (const r of latest) {
@@ -405,44 +469,45 @@ async function render() {
         else if (delta < 0) change = `<span class="rank-down">▼ ${Math.abs(delta)}</span>`;
         else change = "–";
       }
+      const winnings = totalWinnings(r.team_id);
       rows += `<tr>
         <td class="num">${r.league_rank}</td>
         <td>${teamName(teams, r.team_id)}</td>
         <td class="num">${r.gw_points}</td>
         <td class="num">${r.total_points}</td>
         <td class="num">${change}</td>
+        <td class="num">${winnings ? "£" + winnings : "—"}</td>
       </tr>`;
     }
     document.getElementById("standings-wrap").innerHTML = `
       <table>
-        <thead><tr><th class="num">#</th><th>Team</th><th class="num">GW pts</th><th class="num">Total</th><th class="num">Δ</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Team</th><th class="num">GW pts</th><th class="num">Total</th><th class="num">Δ</th><th class="num">Winnings</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
 
-    // Fetch prize rules early — needed both for the weekly-winner amount below and the Prize fund table further down
-    const gws = [...new Set(rankings.map(r => r.gw))].sort((a, b) => a - b);
-    const rules = await sb("prize_rules?select=*&active=eq.true&order=amount.desc");
-    const weeklyWinnerAmount = rules.find(r => r.rule_name === "weekly_winner")?.amount ?? null;
+    // Prizes Won This Season — weekly wins plus any cup already decided.
+    // League position and top-score prizes aren't included since those
+    // aren't awarded until the season ends.
+    const winTeamIds = new Set([...Object.keys(weeklyWinCountByTeamId).map(Number), ...Object.keys(cupPrizeByTeamId).map(Number)]);
+    const prizeRowsData = [...winTeamIds].map(teamId => ({
+      teamId,
+      weeks: weeklyWinCountByTeamId[teamId] || 0,
+      cupPrize: cupPrizeByTeamId[teamId] || 0,
+      total: totalWinnings(teamId),
+    })).sort((a, b) => b.total - a.total);
 
-    // Weekly Prize Winners table — who had the highest score each individual gameweek
-    // (NOT the same as league_rank, which reflects cumulative standing after that gameweek)
-    let gwPrizeRows = "";
-    for (const gw of gws) {
-      const gwRows = rankings.filter(r => r.gw === gw);
-      if (!gwRows.length) continue;
-      const gwWinner = [...gwRows].sort((a, b) => b.gw_points - a.gw_points)[0];
-      gwPrizeRows += `<tr>
-        <td>GW${gw}</td>
-        <td>${teamName(teams, gwWinner.team_id)}</td>
-        <td class="num">${gwWinner.gw_points}</td>
-        <td class="num">${weeklyWinnerAmount ? "£" + weeklyWinnerAmount : "—"}</td>
-      </tr>`;
-    }
-    document.getElementById("gw-prizes-wrap").innerHTML = gwPrizeRows
+    const prizeTableRows = prizeRowsData.map(p => `<tr>
+        <td>${teamName(teams, p.teamId)}</td>
+        <td class="num">${p.weeks}</td>
+        <td class="num">${p.cupPrize ? "£" + p.cupPrize : "—"}</td>
+        <td class="num">£${p.total}</td>
+      </tr>`).join("");
+    document.getElementById("gw-prizes-wrap").innerHTML = prizeTableRows
       ? `<table>
-          <thead><tr><th>Gameweek</th><th>Winner</th><th class="num">Points</th><th class="num">Prize</th></tr></thead>
-          <tbody>${gwPrizeRows}</tbody>
-        </table>`
+          <thead><tr><th>Manager</th><th class="num">Weeks won</th><th class="num">Cups won</th><th class="num">Total winnings</th></tr></thead>
+          <tbody>${prizeTableRows}</tbody>
+        </table>
+        <p style="font-size:0.8rem; color:var(--muted); padding:0.6rem;">League position and top-score prizes are decided at season's end, so aren't included yet.</p>`
       : `<p class="empty">No gameweeks recorded yet.</p>`;
 
     // League position chart — each team's league rank after every gameweek (1 = top, shown at the top of the y-axis)
@@ -571,8 +636,76 @@ async function renderCurrentGrid() {
   }
 }
 
+// Must match the CUP*_START_GW constants in cups.py
+const CUP_DEFS = [
+  { name: "Cup 1 — LMS Cup", startGw: 8 },
+  { name: "Cup 2 — Champion of Champions", startGw: 23 },
+  { name: "Cup 3 — FPL League Cup", startGw: 35 },
+];
+
+function renderCupCard(def, teams, eliminations, matches, winner) {
+  const cupElims = eliminations.filter(e => e.cup_name === def.name).sort((a, b) => a.gw - b.gw);
+  const cupMatches = matches.filter(m => m.cup_name === def.name).sort((a, b) => a.gw - b.gw);
+
+  let bannerHtml = winner
+    ? `<div class="cup-winner-banner">🏆 Champion: ${teamName(teams, winner.team_id)}</div>`
+    : "";
+
+  let bodyHtml = "";
+  if (!winner && !cupElims.length && !cupMatches.length) {
+    bodyHtml = `<div class="cup-status">Starts GW${def.startGw}</div>`;
+  } else {
+    if (cupElims.length) {
+      // Most recent elimination first, so it reads like a countdown
+      const items = [...cupElims].reverse().map(e => `
+        <li><span>${teamName(teams, e.team_id)}</span><span class="out-gw">GW${e.gw} · ${e.score}pts${e.tiebreak_used ? " · " + e.tiebreak_used : ""}</span></li>
+      `).join("");
+      bodyHtml += `<ul class="cup-list">${items}</ul>`;
+    }
+    if (cupMatches.length) {
+      bodyHtml += cupMatches.map(m => {
+        const t1 = teamName(teams, m.team1_id);
+        const t2 = teamName(teams, m.team2_id);
+        const decided = m.winner_team_id != null;
+        const t1Class = decided && m.winner_team_id === m.team1_id ? "winner-name" : "";
+        const t2Class = decided && m.winner_team_id === m.team2_id ? "winner-name" : "";
+        const scoreText = decided ? `${m.team1_score} - ${m.team2_score}` : `GW${m.gw}`;
+        return `<div class="cup-match">
+          <div class="round-label">${m.round_label}</div>
+          <div class="vs-line"><span class="${t1Class}">${t1}</span><span>${scoreText}</span><span class="${t2Class}">${t2}</span></div>
+        </div>`;
+      }).join("");
+    }
+  }
+
+  return `<div class="card cup-card${winner ? " cup-decided" : ""}">
+    <div class="eyebrow">${def.name.split(" — ")[0]}</div>
+    <div class="name" style="font-size:1.05rem;">${def.name.split(" — ")[1]}</div>
+    ${bannerHtml}
+    ${bodyHtml}
+  </div>`;
+}
+
+async function renderCups() {
+  try {
+    const teams = await sb("teams?select=team_id,team_name,manager_name");
+    const eliminations = await sb("cup_eliminations?select=*");
+    const matches = await sb("cup_matches?select=*");
+    const winners = await sb("cup_winners?select=*");
+
+    document.getElementById("cups-wrap").innerHTML = CUP_DEFS.map(def => {
+      const winner = winners.find(w => w.cup_name === def.name);
+      return renderCupCard(def, teams, eliminations, matches, winner);
+    }).join("");
+  } catch (err) {
+    console.error(err);
+    document.getElementById("cups-wrap").innerHTML = `<p class="error">Couldn't load cup data (${err.message}).</p>`;
+  }
+}
+
 render();
 renderCurrentGrid();
+renderCups();
 
 // ── Tab switching ──
 document.querySelectorAll(".tab-btn").forEach(btn => {
