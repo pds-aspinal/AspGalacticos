@@ -229,6 +229,10 @@
   <h2>Points progression</h2>
   <div class="chart-wrap"><canvas id="progressionChart" height="260"></canvas></div>
 
+  <h2>Full Season Grid</h2>
+  <p class="scroll-hint">← Scroll sideways to see all gameweeks →</p>
+  <div class="grid-scroll"><div id="current-grid-wrap"><p class="empty">Loading…</p></div></div>
+
   <h2>Prize fund</h2>
   <div id="prize-wrap"><p class="empty">Loading…</p></div>
 
@@ -268,6 +272,83 @@ async function sb(path) {
   });
   if (!res.ok) throw new Error(`${path} -> ${res.status}`);
   return res.json();
+}
+
+// Shared grid renderer — used by both the live season grid and the past-seasons grid.
+// byManagerGw: { "manager|gw": {gw_points, chip, deduction} }
+// cupStartByGw / cupWinsByManager are optional (only used for past seasons, which have decided cups)
+function buildGridHtml(gws, managers, byManagerGw, totalsByManager, cupStartByGw = {}, cupWinsByManager = {}) {
+  let seasonBest = { points: -Infinity, manager: null, gw: null };
+  managers.forEach(m => {
+    gws.forEach(gw => {
+      const cell = byManagerGw[`${m}|${gw}`];
+      if (cell && cell.gw_points !== null && cell.gw_points > seasonBest.points) {
+        seasonBest = { points: cell.gw_points, manager: m, gw };
+      }
+    });
+  });
+
+  let headerRow = `<th>GW</th>` + managers.map(m => {
+    const wins = cupWinsByManager[m];
+    const cls = wins ? ' class="cup-winner-col"' : "";
+    const badge = wins ? `<span class="cup-winner-badge">🏆 ${wins.join(" / ")}</span>` : "";
+    return `<th${cls}>${firstName(m)}${badge}</th>`;
+  }).join("");
+
+  let bodyRows = "";
+  for (const gw of gws) {
+    let weeklyBest = -Infinity;
+    let weeklyWorst = Infinity;
+    managers.forEach(m => {
+      const cell = byManagerGw[`${m}|${gw}`];
+      if (cell && cell.gw_points !== null) {
+        if (cell.gw_points > weeklyBest) weeklyBest = cell.gw_points;
+        if (cell.gw_points < weeklyWorst) weeklyWorst = cell.gw_points;
+      }
+    });
+
+    let scoreCells = "";
+    let chipCells = "";
+    managers.forEach(m => {
+      const cell = byManagerGw[`${m}|${gw}`];
+      if (!cell || cell.gw_points === null) {
+        scoreCells += `<td class="num">—</td>`;
+        chipCells += `<td></td>`;
+        return;
+      }
+      let cls = "num";
+      let prefix = "";
+      if (m === seasonBest.manager && gw === seasonBest.gw) {
+        cls += " cell-season-best";
+        prefix = "★ ";
+      } else if (cell.gw_points === weeklyBest) {
+        cls += " cell-weekly-best";
+      } else if (cell.gw_points === weeklyWorst && weeklyBest !== weeklyWorst) {
+        cls += " cell-weekly-worst";
+      }
+      scoreCells += `<td class="${cls}">${prefix}${cell.gw_points}</td>`;
+      const annot = [cell.chip, cell.deduction ? cell.deduction : null].filter(Boolean).join(" ");
+      chipCells += `<td class="num">${annot || ""}</td>`;
+    });
+
+    const cupTag = cupStartByGw[gw] ? `<span class="cup-tag">${cupStartByGw[gw]}</span>` : "";
+    bodyRows += `<tr class="score-row"><td>GW${gw}</td>${scoreCells}</tr>`;
+    bodyRows += `<tr class="chip-row"><td>${cupTag}</td>${chipCells}</tr>`;
+  }
+
+  const totalCells = managers.map(m => `<td class="num">${totalsByManager[m] ?? "—"}</td>`).join("");
+  bodyRows += `<tr class="total-row"><td>Total</td>${totalCells}</tr>`;
+
+  return `
+    <table>
+      <thead><tr>${headerRow}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>
+    <p style="font-size:0.8rem; color:var(--muted); padding:0.6rem;">
+      <span class="cell-weekly-best" style="padding:0.1em 0.4em; border-radius:3px;">highlight</span> = highest score that gameweek ·
+      <span class="cell-weekly-worst" style="padding:0.1em 0.4em; border-radius:3px;">highlight</span> = lowest score that gameweek ·
+      <span class="cell-season-best" style="padding:0.1em 0.4em; border-radius:3px;">★ highlight</span> = highest score of the season
+    </p>`;
 }
 
 function firstName(fullName) {
@@ -404,7 +485,60 @@ async function render() {
   }
 }
 
+async function renderCurrentGrid() {
+  try {
+    const teams = await sb("teams?select=team_id,team_name,manager_name");
+    const snaps = await sb("gameweek_snapshots?select=*&order=gw.asc");
+
+    if (!teams.length || !snaps.length) {
+      document.getElementById("current-grid-wrap").innerHTML = "";
+      return;
+    }
+
+    const teamNameById = {};
+    teams.forEach(t => teamNameById[t.team_id] = t.manager_name);
+
+    // Normalize to the same shape the shared grid renderer expects
+    // (transfer_cost is stored as a positive burn amount; display it like the
+    // past-season "deduction" field, i.e. as a negative number e.g. "-4")
+    const byManagerGw = {};
+    snaps.forEach(s => {
+      const manager = teamNameById[s.team_id];
+      if (!manager) return;
+      byManagerGw[`${manager}|${s.gw}`] = {
+        gw_points: s.gw_points,
+        chip: s.chip || null,
+        deduction: s.transfer_cost ? -s.transfer_cost : null,
+      };
+    });
+
+    const gws = [...new Set(snaps.map(s => s.gw))].sort((a,b) => a-b);
+
+    // Column order = current standings (highest total first).
+    // snaps is already ordered by gw ascending, so the last write per
+    // manager naturally ends up being their most recent total.
+    const totalsByManager = {};
+    snaps.forEach(s => {
+      const manager = teamNameById[s.team_id];
+      if (!manager) return;
+      totalsByManager[manager] = s.total_points;
+    });
+    const managers = teams
+      .map(t => t.manager_name)
+      .filter(m => m in totalsByManager)
+      .sort((a, b) => (totalsByManager[b] || 0) - (totalsByManager[a] || 0));
+
+    document.getElementById("current-grid-wrap").innerHTML =
+      buildGridHtml(gws, managers, byManagerGw, totalsByManager);
+  } catch (err) {
+    console.error(err);
+    document.getElementById("current-grid-wrap").innerHTML =
+      `<p class="error">Couldn't load the season grid (${err.message}).</p>`;
+  }
+}
+
 render();
+renderCurrentGrid();
 
 // ── Tab switching ──
 document.querySelectorAll(".tab-btn").forEach(btn => {
@@ -497,14 +631,6 @@ function renderSeasonDetail(season) {
     byManagerGw[`${s.manager_name}|${s.gw}`] = s;
   });
 
-  // Find the single highest score of the whole season, for the strongest highlight
-  let seasonBest = { points: -Infinity, manager: null, gw: null };
-  seasonSnaps.forEach(s => {
-    if (s.gw_points !== null && s.gw_points > seasonBest.points) {
-      seasonBest = { points: s.gw_points, manager: s.manager_name, gw: s.gw };
-    }
-  });
-
   // Which gameweek each cup starts, so we can flag it on the grid (short label to fit the narrow GW column)
   const cupShortNames = {
     "Cup 1 — LMS Cup": "Cup 1",
@@ -529,70 +655,11 @@ function renderSeasonDetail(season) {
     }
   });
 
-  let headerRow = `<th>GW</th>` + managers.map(m => {
-    const wins = cupWinsByManager[m];
-    const cls = wins ? ' class="cup-winner-col"' : "";
-    const badge = wins ? `<span class="cup-winner-badge">🏆 ${wins.join(" / ")}</span>` : "";
-    return `<th${cls}>${firstName(m)}${badge}</th>`;
-  }).join("");
-  let bodyRows = "";
-  for (const gw of gws) {
-    // weekly best and worst for this row
-    let weeklyBest = -Infinity;
-    let weeklyWorst = Infinity;
-    managers.forEach(m => {
-      const cell = byManagerGw[`${m}|${gw}`];
-      if (cell && cell.gw_points !== null) {
-        if (cell.gw_points > weeklyBest) weeklyBest = cell.gw_points;
-        if (cell.gw_points < weeklyWorst) weeklyWorst = cell.gw_points;
-      }
-    });
-
-    let scoreCells = "";
-    let chipCells = "";
-    managers.forEach(m => {
-      const cell = byManagerGw[`${m}|${gw}`];
-      if (!cell || cell.gw_points === null) {
-        scoreCells += `<td class="num">—</td>`;
-        chipCells += `<td></td>`;
-        return;
-      }
-      let cls = "num";
-      let prefix = "";
-      if (cell.manager_name === seasonBest.manager && cell.gw === seasonBest.gw) {
-        cls += " cell-season-best";
-        prefix = "★ ";
-      } else if (cell.gw_points === weeklyBest) {
-        cls += " cell-weekly-best";
-      } else if (cell.gw_points === weeklyWorst && weeklyBest !== weeklyWorst) {
-        cls += " cell-weekly-worst";
-      }
-      scoreCells += `<td class="${cls}">${prefix}${cell.gw_points}</td>`;
-      const annot = [cell.chip, cell.deduction ? cell.deduction : null].filter(Boolean).join(" ");
-      chipCells += `<td class="num">${annot || ""}</td>`;
-    });
-
-    const cupTag = cupStartByGw[gw] ? `<span class="cup-tag">${cupStartByGw[gw]}</span>` : "";
-    bodyRows += `<tr class="score-row"><td>GW${gw}</td>${scoreCells}</tr>`;
-    bodyRows += `<tr class="chip-row"><td>${cupTag}</td>${chipCells}</tr>`;
-  }
-
-  // Total row at the bottom
   const totalsByManager = {};
   seasonSummary.forEach(s => totalsByManager[s.manager_name] = s.total_points);
-  const totalCells = managers.map(m => `<td class="num">${totalsByManager[m] ?? "—"}</td>`).join("");
-  bodyRows += `<tr class="total-row"><td>Total</td>${totalCells}</tr>`;
 
-  document.getElementById("past-grid-wrap").innerHTML = `
-    <table>
-      <thead><tr>${headerRow}</tr></thead>
-      <tbody>${bodyRows}</tbody>
-    </table>
-    <p style="font-size:0.8rem; color:var(--muted); padding:0.6rem;">
-      <span class="cell-weekly-best" style="padding:0.1em 0.4em; border-radius:3px;">highlight</span> = highest score that gameweek ·
-      <span class="cell-weekly-worst" style="padding:0.1em 0.4em; border-radius:3px;">highlight</span> = lowest score that gameweek ·
-      <span class="cell-season-best" style="padding:0.1em 0.4em; border-radius:3px;">★ highlight</span> = highest score of the season
-    </p>`;
+  document.getElementById("past-grid-wrap").innerHTML =
+    buildGridHtml(gws, managers, byManagerGw, totalsByManager, cupStartByGw, cupWinsByManager);
 }
 
 
