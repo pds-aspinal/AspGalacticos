@@ -559,15 +559,25 @@ async function render() {
       league_4th: "League — 4th place",
       league_3rd: "League — 3rd place",
       league_2nd: "League — 2nd place",
-      league_1st: "League — 1st place (champion)",
+      league_1st: "League — 1st place",
       lms_cup: "Cup 1 — Last Man Standing Cup",
       champion_of_champions_cup: "Cup 2 — Champion of Champions Cup",
       fpl_league_cup: "Cup 3 — FPL League Cup",
       top_score: "Highest single-gameweek score, all season",
     };
+    // Display order matches Pete's own prize-fund breakdown (not sorted by amount)
+    const displayOrder = [
+      "weekly_winner", "league_5th", "league_4th", "league_3rd", "league_2nd", "league_1st",
+      "lms_cup", "champion_of_champions_cup", "fpl_league_cup", "top_score",
+    ];
+    const orderedRules = [...rules].sort((a, b) => {
+      const ai = displayOrder.indexOf(a.rule_name);
+      const bi = displayOrder.indexOf(b.rule_name);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
     let totalPot = 0;
     let prizeRows = "";
-    for (const r of rules) {
+    for (const r of orderedRules) {
       const isWeekly = r.frequency === "per_gameweek";
       const lineTotal = isWeekly ? r.amount * 38 : r.amount;
       totalPot += lineTotal;
