@@ -92,7 +92,7 @@ def fetch_league_teams(league_id: str) -> list[dict]:
 
 
 def fetch_team_history(team_id: int) -> list[dict]:
-    """Returns [{gw, gw_points, total_points, chip, transfer_cost}, ...] for every completed gameweek."""
+    """Returns [{gw, gw_points, total_points, chip, transfer_cost, team_value}, ...] for every completed gameweek."""
     url = f"{FPL_BASE}/entry/{team_id}/history/"
     data = fetch_json(url)
 
@@ -105,6 +105,9 @@ def fetch_team_history(team_id: int) -> list[dict]:
     rows = []
     for gw in data["current"]:
         cost = gw.get("event_transfers_cost", 0)
+        # FPL reports squad value in tenths of a million (e.g. 1023 -> £102.3m)
+        raw_value = gw.get("value")
+        team_value = round(raw_value / 10, 1) if raw_value is not None else None
         rows.append(
             {
                 "gw": gw["event"],
@@ -113,6 +116,7 @@ def fetch_team_history(team_id: int) -> list[dict]:
                 "total_points": gw["total_points"],
                 "chip": chip_by_gw.get(gw["event"]),
                 "transfer_cost": cost if cost else None,
+                "team_value": team_value,
             }
         )
     return rows
