@@ -410,6 +410,11 @@ async function render() {
     const latestGw = rankings[0].gw;
     document.getElementById("league-meta").textContent = `After gameweek ${latestGw}`;
 
+    // Team value may not exist yet if that migration hasn't been run — degrade gracefully
+    const latestSnaps = await sb(`gameweek_snapshots?select=team_id,team_value&gw=eq.${latestGw}`).catch(() => []);
+    const teamValueByTeamId = {};
+    latestSnaps.forEach(s => { if (s.team_value != null) teamValueByTeamId[s.team_id] = s.team_value; });
+
     const latest = rankings.filter(r => r.gw === latestGw);
     const prevRanks = {};
     rankings.filter(r => r.gw === latestGw - 1).forEach(r => prevRanks[r.team_id] = r.league_rank);
@@ -470,18 +475,20 @@ async function render() {
         else change = "–";
       }
       const winnings = totalWinnings(r.team_id);
+      const value = teamValueByTeamId[r.team_id];
       rows += `<tr>
         <td class="num">${r.league_rank}</td>
         <td>${teamName(teams, r.team_id)}</td>
         <td class="num">${r.gw_points}</td>
         <td class="num">${r.total_points}</td>
         <td class="num">${change}</td>
+        <td class="num">${value != null ? "£" + value.toFixed(1) + "m" : "—"}</td>
         <td class="num">${winnings ? "£" + winnings : "—"}</td>
       </tr>`;
     }
     document.getElementById("standings-wrap").innerHTML = `
       <table>
-        <thead><tr><th class="num">#</th><th>Team</th><th class="num">GW pts</th><th class="num">Total</th><th class="num">Δ</th><th class="num">Winnings</th></tr></thead>
+        <thead><tr><th class="num">#</th><th>Team</th><th class="num">GW pts</th><th class="num">Total</th><th class="num">Δ</th><th class="num">Value</th><th class="num">Winnings</th></tr></thead>
         <tbody>${rows}</tbody>
       </table>`;
 
