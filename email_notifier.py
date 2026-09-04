@@ -14,7 +14,7 @@ account, with an App Password generated for "Mail".
 
 Environment variables required:
   SUPABASE_URL                 e.g. https://lsasffymfvshobtbihly.supabase.co
-  SUPABASE_SERVICE_ROLE_KEY    service role key (NOT anon key - needs write-level read access)
+  SUPABASE_SERVICE_KEY         service role key (NOT anon key - needs write-level read access)
   GMAIL_ADDRESS                the sending Gmail address
   GMAIL_APP_PASSWORD           16-character app password (no spaces)
 
