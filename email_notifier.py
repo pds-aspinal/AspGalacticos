@@ -164,14 +164,18 @@ BRAND_DARK = "#1b3a6b"
 TEXT_DARK = "#222222"
 TEXT_MUTED = "#767676"
 BORDER = "#ededed"
+# Outlook desktop renders HTML email with Word's engine, which adds its own
+# spacing around tables unless explicitly told not to.
+TABLE_RESET = "border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;"
 
 
 def fdr_badge(difficulty):
     bg, fg = FDR_COLORS.get(difficulty, ("#e0e0e0", "#333333"))
     return (
-        f'<span style="display:inline-block;background:{bg};color:{fg};'
+        f'<span style="background:{bg};color:{fg};'
         f'font-size:10px;font-weight:bold;padding:2px 6px;border-radius:4px;'
-        f'line-height:14px;white-space:nowrap;">{difficulty}</span>'
+        f'mso-line-height-rule:exactly;line-height:16px;vertical-align:middle;'
+        f'white-space:nowrap;">{difficulty}</span>'
     )
 
 
@@ -210,12 +214,12 @@ def build_recap_section(team_id, teams, snap_now, snap_prev, all_snaps_now):
     weekly_worst = min(gw_points_all)
 
     stats_row = (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}margin-bottom:14px;">'
         '<tr>'
         + stat_card(row["gw_points"], "GW Points")
-        + '<td width="10"></td>'
+        + '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>'
         + stat_card(f'#{row["rank"]}', "League Rank", rank_badge)
-        + '<td width="10"></td>'
+        + '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>'
         + stat_card(row["total_points"], "Total Points")
         + "</tr></table>"
     )
@@ -256,8 +260,9 @@ def fixture_column(title, fixtures, teams_by_fpl_id, header_bg):
         h = teams_by_fpl_id[f["team_h"]]["short_name"]
         a = teams_by_fpl_id[f["team_a"]]["short_name"]
         rows.append(
-            f'<div style="padding:6px 0;border-bottom:1px solid {BORDER};font-size:12px;color:{TEXT_DARK};">'
-            f'{h} {fdr_badge(f["team_h_difficulty"])} &nbsp;vs&nbsp; {a} {fdr_badge(f["team_a_difficulty"])}'
+            f'<div style="padding:6px 0;border-bottom:1px solid {BORDER};font-size:12px;color:{TEXT_DARK};'
+            f'mso-line-height-rule:exactly;line-height:20px;">'
+            f'{h}&nbsp;{fdr_badge(f["team_h_difficulty"])} &nbsp;vs&nbsp; {a}&nbsp;{fdr_badge(f["team_a_difficulty"])}'
             f'</div>'
         )
     return f"""
@@ -283,9 +288,9 @@ def build_general_fdr_section(fixtures, teams_by_fpl_id, next_gw_number):
     hardest = sorted_fixtures[-3:]
 
     return (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;"><tr>'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}margin-bottom:18px;"><tr>'
         + fixture_column("Easiest fixtures", easiest, teams_by_fpl_id, "#1a7a4c")
-        + '<td width="4%"></td>'
+        + '<td width="16" style="font-size:0;line-height:0;">&nbsp;</td>'
         + fixture_column("Toughest fixtures", hardest, teams_by_fpl_id, "#b71c3c")
         + "</tr></table>"
     )
@@ -323,31 +328,42 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
                 opp_short = teams_by_id[opp_id]["short_name"]
                 difficulty = f["team_h_difficulty"] if is_home else f["team_a_difficulty"]
                 venue = "H" if is_home else "A"
-                parts.append(f'{opp_short} ({venue}) {fdr_badge(difficulty)}')
-            chips_html = "&nbsp;&nbsp;".join(parts)
+                parts.append(f'{opp_short}&nbsp;({venue})&nbsp;{fdr_badge(difficulty)}')
+            chips_html = "&nbsp;&nbsp;&nbsp;".join(parts)
         rows.append(
             f'<tr>'
-            f'<td style="padding:7px 0;border-bottom:1px solid {BORDER};font-size:13px;color:{TEXT_DARK};">'
+            f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};font-size:13px;color:{TEXT_DARK};'
+            f'mso-line-height-rule:exactly;line-height:20px;">'
             f'<strong>{el["web_name"]}</strong> <span style="color:{TEXT_MUTED};font-size:11px;">({team_short})</span>'
             f'</td>'
-            f'<td style="padding:7px 0;border-bottom:1px solid {BORDER};text-align:right;">{chips_html}</td>'
+            f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};text-align:right;'
+            f'mso-line-height-rule:exactly;line-height:20px;">{chips_html}</td>'
             f'</tr>'
         )
 
     return (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' + "".join(rows) + "</table>"
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}">'
+        + "".join(rows) + "</table>"
     )
 
 
 def build_email_html(manager_name, team_name, recap_html, fdr_html, squad_html, current_gw, next_gw):
     return f"""\
 <html>
+  <head>
+    <!--[if mso]>
+    <style type="text/css">
+      table {{border-collapse:collapse;}}
+      td {{mso-line-height-rule:exactly;}}
+    </style>
+    <![endif]-->
+  </head>
   <body style="margin:0;padding:0;background-color:#f4f4f4;font-family:Arial, Helvetica, sans-serif;">
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:24px 0;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}background-color:#f4f4f4;padding:24px 0;">
       <tr>
         <td align="center">
           <table role="presentation" width="600" cellpadding="0" cellspacing="0"
-                 style="background-color:#ffffff;border-radius:10px;overflow:hidden;max-width:600px;">
+                 style="{TABLE_RESET}background-color:#ffffff;border-radius:10px;overflow:hidden;max-width:600px;">
             <tr>
               <td style="background-color:{BRAND_DARK};padding:22px 32px;">
                 <div style="color:#ffffff;font-size:19px;font-weight:bold;">Aspinal Galacticos</div>
