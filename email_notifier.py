@@ -151,69 +151,144 @@ def group_fixtures_by_team(fixtures):
 # Content builders
 # ---------------------------------------------------------------------------
 
-def format_delta(rank_now, rank_before):
+# Approximate FPL's own difficulty colour scale (1 = easiest/green, 5 = hardest/red)
+FDR_COLORS = {
+    1: ("#1a7a4c", "#ffffff"),
+    2: ("#4cbf6c", "#ffffff"),
+    3: ("#e0e0e0", "#333333"),
+    4: ("#e8615c", "#ffffff"),
+    5: ("#b71c3c", "#ffffff"),
+}
+
+BRAND_DARK = "#1b3a6b"
+TEXT_DARK = "#222222"
+TEXT_MUTED = "#767676"
+BORDER = "#ededed"
+
+
+def fdr_badge(difficulty):
+    bg, fg = FDR_COLORS.get(difficulty, ("#e0e0e0", "#333333"))
+    return (
+        f'<span style="display:inline-block;background:{bg};color:{fg};'
+        f'font-size:10px;font-weight:bold;padding:2px 6px;border-radius:4px;'
+        f'line-height:14px;white-space:nowrap;">{difficulty}</span>'
+    )
+
+
+def rank_delta_badge(rank_now, rank_before):
     if rank_before is None:
-        return ""
+        return '<span style="font-size:11px;color:' + TEXT_MUTED + ';">First tracked GW</span>'
     diff = rank_before - rank_now
     if diff > 0:
-        return f" (up {diff} \u25b2)"
+        return f'<span style="font-size:12px;color:#1a7a4c;font-weight:bold;">\u25b2 up {diff}</span>'
     if diff < 0:
-        return f" (down {abs(diff)} \u25bc)"
-    return " (no change)"
+        return f'<span style="font-size:12px;color:#b71c3c;font-weight:bold;">\u25bc down {abs(diff)}</span>'
+    return f'<span style="font-size:12px;color:{TEXT_MUTED};">\u2014 no change</span>'
+
+
+def stat_card(value, label, sublabel_html=""):
+    return f"""
+    <td width="33%" align="center" valign="top" style="background:#f4f7fb;border-radius:8px;padding:14px 6px;">
+      <div style="font-size:24px;font-weight:bold;color:{BRAND_DARK};line-height:1.1;">{value}</div>
+      <div style="margin-top:2px;">{sublabel_html}</div>
+      <div style="font-size:10px;color:{TEXT_MUTED};text-transform:uppercase;letter-spacing:.4px;margin-top:4px;">{label}</div>
+    </td>
+    """
 
 
 def build_recap_section(team_id, teams, snap_now, snap_prev, all_snaps_now):
     team = teams[team_id]
     row = snap_now.get(team_id)
     if row is None:
-        return f"<p>No snapshot found for {team['team_name']} this GW - skipping recap.</p>"
+        return f'<p style="color:{TEXT_MUTED};">No snapshot found for {team["team_name"]} this GW.</p>'
 
     prev_row = snap_prev.get(team_id) if snap_prev else None
-    rank_delta_str = format_delta(row["rank"], prev_row["rank"] if prev_row else None)
+    rank_badge = rank_delta_badge(row["rank"], prev_row["rank"] if prev_row else None)
 
     gw_points_all = [r["gw_points"] for r in all_snaps_now.values()]
     weekly_best = max(gw_points_all)
     weekly_worst = min(gw_points_all)
 
-    lines = [
-        f"<p><strong>GW points:</strong> {row['gw_points']}</p>",
-        f"<p><strong>League rank:</strong> #{row['rank']}{rank_delta_str}</p>",
-        f"<p><strong>Total points:</strong> {row['total_points']}</p>",
-    ]
+    stats_row = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:14px;">'
+        '<tr>'
+        + stat_card(row["gw_points"], "GW Points")
+        + '<td width="10"></td>'
+        + stat_card(f'#{row["rank"]}', "League Rank", rank_badge)
+        + '<td width="10"></td>'
+        + stat_card(row["total_points"], "Total Points")
+        + "</tr></table>"
+    )
 
+    badges = []
     if row.get("chip"):
-        lines.append(f"<p><strong>Chip played:</strong> {CHIP_NAMES.get(row['chip'], row['chip'])}</p>")
+        badges.append(
+            f'<span style="display:inline-block;background:#eef2fb;color:{BRAND_DARK};font-size:11px;'
+            f'font-weight:bold;padding:4px 8px;border-radius:12px;margin-right:6px;">'
+            f'{CHIP_NAMES.get(row["chip"], row["chip"])} played</span>'
+        )
     if row.get("transfer_cost"):
-        lines.append(f"<p><strong>Transfer hit:</strong> -{row['transfer_cost']} pts</p>")
+        badges.append(
+            f'<span style="display:inline-block;background:#fdeeee;color:#b71c3c;font-size:11px;'
+            f'font-weight:bold;padding:4px 8px;border-radius:12px;">'
+            f'-{row["transfer_cost"]} pts transfer hit</span>'
+        )
+    badges_html = f'<div style="margin-bottom:14px;">{"".join(badges)}</div>' if badges else ""
 
     if row["gw_points"] == weekly_best:
-        lines.append("<p>\U0001F3C6 You had the <strong>highest score</strong> in the league this GW!</p>")
+        banner_bg, banner_text = "#eafaf0", f'\U0001F3C6 <strong>Highest score in the league</strong> this GW!'
     elif row["gw_points"] == weekly_worst:
-        lines.append(f"<p>Rough week - the league's high score was {weekly_best}.</p>")
+        banner_bg, banner_text = "#fdeeee", f"Rough week \u2014 the league's high score was {weekly_best}."
     else:
-        lines.append(f"<p>League this GW ranged from {weekly_worst} to {weekly_best} points.</p>")
+        banner_bg, banner_text = "#f4f7fb", f"League this GW ranged from {weekly_worst} to {weekly_best} points."
 
-    return "\n".join(lines)
+    banner_html = (
+        f'<div style="background:{banner_bg};border-radius:6px;padding:10px 14px;'
+        f'font-size:13px;color:{TEXT_DARK};">{banner_text}</div>'
+    )
+
+    return stats_row + badges_html + banner_html
+
+
+def fixture_column(title, fixtures, teams_by_fpl_id, header_bg):
+    rows = []
+    for f in fixtures:
+        h = teams_by_fpl_id[f["team_h"]]["short_name"]
+        a = teams_by_fpl_id[f["team_a"]]["short_name"]
+        rows.append(
+            f'<div style="padding:6px 0;border-bottom:1px solid {BORDER};font-size:12px;color:{TEXT_DARK};">'
+            f'{h} {fdr_badge(f["team_h_difficulty"])} &nbsp;vs&nbsp; {a} {fdr_badge(f["team_a_difficulty"])}'
+            f'</div>'
+        )
+    return f"""
+    <td width="48%" valign="top" style="background:#fafafa;border-radius:8px;padding:12px 14px;">
+      <div style="display:inline-block;background:{header_bg};color:#ffffff;font-size:11px;font-weight:bold;
+                  text-transform:uppercase;letter-spacing:.4px;padding:3px 8px;border-radius:4px;margin-bottom:8px;">
+        {title}
+      </div>
+      {"".join(rows)}
+    </td>
+    """
 
 
 def build_general_fdr_section(fixtures, teams_by_fpl_id, next_gw_number):
     if not fixtures:
-        return f"<p>No fixtures found for GW{next_gw_number} yet (blank gameweek or fixtures not released).</p>"
-
-    def fixture_label(f):
-        h = teams_by_fpl_id[f["team_h"]]["short_name"]
-        a = teams_by_fpl_id[f["team_a"]]["short_name"]
-        return f"{h} vs {a} (FDR {f['team_h_difficulty']}/{f['team_a_difficulty']})"
+        return (
+            f'<p style="color:{TEXT_MUTED};font-size:13px;">'
+            f'No fixtures found for GW{next_gw_number} yet (blank gameweek or fixtures not released).</p>'
+        )
 
     sorted_fixtures = sorted(fixtures, key=lambda f: f["team_h_difficulty"] + f["team_a_difficulty"])
     easiest = sorted_fixtures[:3]
     hardest = sorted_fixtures[-3:]
 
-    lines = [f"<p><strong>GW{next_gw_number} at a glance:</strong></p>", "<ul>"]
-    lines.append("<li>Easiest fixtures: " + ", ".join(fixture_label(f) for f in easiest) + "</li>")
-    lines.append("<li>Toughest fixtures: " + ", ".join(fixture_label(f) for f in hardest) + "</li>")
-    lines.append("</ul>")
-    return "\n".join(lines)
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:18px;"><tr>'
+        + fixture_column("Easiest fixtures", easiest, teams_by_fpl_id, "#1a7a4c")
+        + '<td width="4%"></td>'
+        + fixture_column("Toughest fixtures", hardest, teams_by_fpl_id, "#b71c3c")
+        + "</tr></table>"
+    )
 
 
 def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_team):
@@ -222,16 +297,16 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
     # recently completed gw's picks are the best available proxy for "your
     # current squad" until the next gw's picks are locked in.
     if not picks_data:
-        return "<p>Couldn't retrieve your squad from the FPL API for a fixture breakdown this week.</p>"
+        return f'<p style="color:{TEXT_MUTED};font-size:13px;">Couldn\'t retrieve your squad from the FPL API for a fixture breakdown this week.</p>'
 
     elements_by_id = {e["id"]: e for e in bootstrap["elements"]}
     teams_by_id = {t["id"]: t for t in bootstrap["teams"]}
 
     starters = [p for p in picks_data.get("picks", []) if p.get("multiplier", 0) > 0]
     if not starters:
-        return "<p>No starting XI data available for a fixture breakdown this week.</p>"
+        return f'<p style="color:{TEXT_MUTED};font-size:13px;">No starting XI data available for a fixture breakdown this week.</p>'
 
-    lines = [f"<p><strong>Your players' GW{next_gw_number} fixtures:</strong></p>", "<ul>"]
+    rows = []
     for p in starters:
         el = elements_by_id.get(p["element"])
         if not el:
@@ -239,42 +314,81 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
         team_short = teams_by_id[el["team"]]["short_name"]
         fixtures = fixtures_by_team.get(el["team"], [])
         if not fixtures:
-            lines.append(f"<li>{el['web_name']} ({team_short}): no fixture (blank)</li>")
-            continue
-        parts = []
-        for f in fixtures:
-            is_home = f["team_h"] == el["team"]
-            opp_id = f["team_a"] if is_home else f["team_h"]
-            opp_short = teams_by_id[opp_id]["short_name"]
-            difficulty = f["team_h_difficulty"] if is_home else f["team_a_difficulty"]
-            venue = "H" if is_home else "A"
-            parts.append(f"{opp_short} ({venue}, FDR {difficulty})")
-        lines.append(f"<li>{el['web_name']} ({team_short}): {', '.join(parts)}</li>")
-    lines.append("</ul>")
-    return "\n".join(lines)
+            chips_html = f'<span style="color:{TEXT_MUTED};font-size:12px;">No fixture (blank)</span>'
+        else:
+            parts = []
+            for f in fixtures:
+                is_home = f["team_h"] == el["team"]
+                opp_id = f["team_a"] if is_home else f["team_h"]
+                opp_short = teams_by_id[opp_id]["short_name"]
+                difficulty = f["team_h_difficulty"] if is_home else f["team_a_difficulty"]
+                venue = "H" if is_home else "A"
+                parts.append(f'{opp_short} ({venue}) {fdr_badge(difficulty)}')
+            chips_html = "&nbsp;&nbsp;".join(parts)
+        rows.append(
+            f'<tr>'
+            f'<td style="padding:7px 0;border-bottom:1px solid {BORDER};font-size:13px;color:{TEXT_DARK};">'
+            f'<strong>{el["web_name"]}</strong> <span style="color:{TEXT_MUTED};font-size:11px;">({team_short})</span>'
+            f'</td>'
+            f'<td style="padding:7px 0;border-bottom:1px solid {BORDER};text-align:right;">{chips_html}</td>'
+            f'</tr>'
+        )
+
+    return (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0">' + "".join(rows) + "</table>"
+    )
 
 
 def build_email_html(manager_name, team_name, recap_html, fdr_html, squad_html, current_gw, next_gw):
     return f"""\
 <html>
-  <body style="font-family: Arial, sans-serif; color: #222; line-height: 1.5;">
-    <h2>Aspinal Galacticos - GW{current_gw} Update</h2>
-    <p>Hi {manager_name},</p>
-    <p>Here's how <strong>{team_name}</strong> got on in GW{current_gw}, and what's coming up in GW{next_gw}.</p>
+  <body style="margin:0;padding:0;background-color:#f4f4f4;font-family:Arial, Helvetica, sans-serif;">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f4;padding:24px 0;">
+      <tr>
+        <td align="center">
+          <table role="presentation" width="600" cellpadding="0" cellspacing="0"
+                 style="background-color:#ffffff;border-radius:10px;overflow:hidden;max-width:600px;">
+            <tr>
+              <td style="background-color:{BRAND_DARK};padding:22px 32px;">
+                <div style="color:#ffffff;font-size:19px;font-weight:bold;">Aspinal Galacticos</div>
+                <div style="color:#c9d6ea;font-size:13px;margin-top:2px;">GW{current_gw} Update &middot; {team_name}</div>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:26px 32px;">
+                <p style="font-size:14px;color:{TEXT_DARK};margin:0 0 18px 0;">
+                  Hi {manager_name}, here's how <strong>{team_name}</strong> got on in GW{current_gw},
+                  and what's coming up in GW{next_gw}.
+                </p>
 
-    <h3>GW{current_gw} Recap</h3>
-    {recap_html}
+                <h3 style="font-size:14px;color:{TEXT_DARK};text-transform:uppercase;letter-spacing:.4px;
+                           border-bottom:2px solid {BRAND_DARK};padding-bottom:6px;margin:0 0 14px 0;">
+                  GW{current_gw} Recap
+                </h3>
+                {recap_html}
 
-    <h3>GW{next_gw} Preview</h3>
-    {fdr_html}
-    {squad_html}
-
-    <p style="margin-top: 24px;">
-      <a href="{DASHBOARD_URL}">View the full league dashboard</a>
-    </p>
-    <p style="color: #888; font-size: 12px;">
-      Automated update from the Aspinal Galacticos League tracker.
-    </p>
+                <h3 style="font-size:14px;color:{TEXT_DARK};text-transform:uppercase;letter-spacing:.4px;
+                           border-bottom:2px solid {BRAND_DARK};padding-bottom:6px;margin:24px 0 14px 0;">
+                  GW{next_gw} Preview
+                </h3>
+                {fdr_html}
+                {squad_html}
+              </td>
+            </tr>
+            <tr>
+              <td style="padding:16px 32px;background-color:#fafafa;border-top:1px solid {BORDER};">
+                <a href="{DASHBOARD_URL}" style="color:{BRAND_DARK};font-size:13px;font-weight:bold;text-decoration:none;">
+                  View the full league dashboard &rarr;
+                </a>
+                <div style="color:#999999;font-size:11px;margin-top:8px;">
+                  Automated update from the Aspinal Galacticos League tracker.
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
   </body>
 </html>
 """
