@@ -169,13 +169,24 @@ BORDER = "#ededed"
 TABLE_RESET = "border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0pt;"
 
 
-def fdr_badge(difficulty):
+def fdr_cell_style(difficulty):
+    """Style string for a <td> acting as a colour badge - td background-color
+    and padding are honoured far more reliably across Outlook clients than
+    the same properties on a <span>."""
     bg, fg = FDR_COLORS.get(difficulty, ("#e0e0e0", "#333333"))
     return (
-        f'<span style="background:{bg};color:{fg};'
-        f'font-size:10px;font-weight:bold;padding:2px 6px;border-radius:4px;'
-        f'mso-line-height-rule:exactly;line-height:16px;vertical-align:middle;'
-        f'white-space:nowrap;">{difficulty}</span>'
+        f'background-color:{bg};color:{fg};font-size:10px;font-weight:bold;'
+        f'padding:3px 0;border-radius:4px;text-align:center;white-space:nowrap;'
+    )
+
+
+def pill_table(text, bg, fg):
+    """A single-cell table used as a coloured 'pill' - more reliable than a
+    styled span across Outlook clients."""
+    return (
+        f'<table role="presentation" cellpadding="0" cellspacing="0" style="{TABLE_RESET}">'
+        f'<tr><td style="background-color:{bg};color:{fg};font-size:11px;font-weight:bold;'
+        f'padding:4px 10px;border-radius:12px;white-space:nowrap;">{text}</td></tr></table>'
     )
 
 
@@ -224,20 +235,20 @@ def build_recap_section(team_id, teams, snap_now, snap_prev, all_snaps_now):
         + "</tr></table>"
     )
 
-    badges = []
+    pills = []
     if row.get("chip"):
-        badges.append(
-            f'<span style="display:inline-block;background:#eef2fb;color:{BRAND_DARK};font-size:11px;'
-            f'font-weight:bold;padding:4px 8px;border-radius:12px;margin-right:6px;">'
-            f'{CHIP_NAMES.get(row["chip"], row["chip"])} played</span>'
-        )
+        pills.append(pill_table(f'{CHIP_NAMES.get(row["chip"], row["chip"])} played', "#eef2fb", BRAND_DARK))
     if row.get("transfer_cost"):
-        badges.append(
-            f'<span style="display:inline-block;background:#fdeeee;color:#b71c3c;font-size:11px;'
-            f'font-weight:bold;padding:4px 8px;border-radius:12px;">'
-            f'-{row["transfer_cost"]} pts transfer hit</span>'
+        pills.append(pill_table(f'-{row["transfer_cost"]} pts transfer hit', "#fdeeee", "#b71c3c"))
+
+    if pills:
+        cells = "".join(f'<td style="padding-right:8px;">{p}</td>' for p in pills)
+        badges_html = (
+            f'<table role="presentation" cellpadding="0" cellspacing="0" '
+            f'style="{TABLE_RESET}margin-bottom:14px;"><tr>{cells}<td></td></tr></table>'
         )
-    badges_html = f'<div style="margin-bottom:14px;">{"".join(badges)}</div>' if badges else ""
+    else:
+        badges_html = ""
 
     if row["gw_points"] == weekly_best:
         banner_bg, banner_text = "#eafaf0", f'\U0001F3C6 <strong>Highest score in the league</strong> this GW!'
@@ -254,24 +265,36 @@ def build_recap_section(team_id, teams, snap_now, snap_prev, all_snaps_now):
     return stats_row + badges_html + banner_html
 
 
+def fixture_row_table(f, teams_by_fpl_id, show_border):
+    h = teams_by_fpl_id[f["team_h"]]["short_name"]
+    a = teams_by_fpl_id[f["team_a"]]["short_name"]
+    dh, da = f["team_h_difficulty"], f["team_a_difficulty"]
+    border = f'border-bottom:1px solid {BORDER};' if show_border else ''
+    return f"""
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}">
+      <tr>
+        <td style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{h}</td>
+        <td width="20" align="center" style="{fdr_cell_style(dh)}">{dh}</td>
+        <td width="26" align="center" style="font-size:11px;color:{TEXT_MUTED};padding:6px 2px;{border}">vs</td>
+        <td style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{a}</td>
+        <td width="20" align="center" style="{fdr_cell_style(da)}">{da}</td>
+      </tr>
+    </table>
+    """
+
+
 def fixture_column(title, fixtures, teams_by_fpl_id, header_bg):
-    rows = []
-    for f in fixtures:
-        h = teams_by_fpl_id[f["team_h"]]["short_name"]
-        a = teams_by_fpl_id[f["team_a"]]["short_name"]
-        rows.append(
-            f'<div style="padding:6px 0;border-bottom:1px solid {BORDER};font-size:12px;color:{TEXT_DARK};'
-            f'mso-line-height-rule:exactly;line-height:20px;">'
-            f'{h}&nbsp;{fdr_badge(f["team_h_difficulty"])} &nbsp;vs&nbsp; {a}&nbsp;{fdr_badge(f["team_a_difficulty"])}'
-            f'</div>'
-        )
+    rows = "".join(
+        fixture_row_table(f, teams_by_fpl_id, show_border=(i < len(fixtures) - 1))
+        for i, f in enumerate(fixtures)
+    )
     return f"""
     <td width="48%" valign="top" style="background:#fafafa;border-radius:8px;padding:12px 14px;">
       <div style="display:inline-block;background:{header_bg};color:#ffffff;font-size:11px;font-weight:bold;
                   text-transform:uppercase;letter-spacing:.4px;padding:3px 8px;border-radius:4px;margin-bottom:8px;">
         {title}
       </div>
-      {"".join(rows)}
+      {rows}
     </td>
     """
 
@@ -328,16 +351,25 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
                 opp_short = teams_by_id[opp_id]["short_name"]
                 difficulty = f["team_h_difficulty"] if is_home else f["team_a_difficulty"]
                 venue = "H" if is_home else "A"
-                parts.append(f'{opp_short}&nbsp;({venue})&nbsp;{fdr_badge(difficulty)}')
-            chips_html = "&nbsp;&nbsp;&nbsp;".join(parts)
+                # A small standalone table per fixture, right-aligned with the HTML
+                # align attribute (works in Outlook where CSS margin:auto often doesn't).
+                # Multiple fixtures (double gameweeks) stack, one per line.
+                parts.append(
+                    f'<table align="right" role="presentation" cellpadding="0" cellspacing="0" '
+                    f'style="{TABLE_RESET}margin-bottom:2px;">'
+                    f'<tr>'
+                    f'<td style="font-size:12px;color:{TEXT_DARK};padding:0 6px 0 0;white-space:nowrap;">{opp_short} ({venue})</td>'
+                    f'<td width="20" align="center" style="{fdr_cell_style(difficulty)}">{difficulty}</td>'
+                    f'</tr></table>'
+                )
+            chips_html = "".join(parts)
         rows.append(
             f'<tr>'
             f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};font-size:13px;color:{TEXT_DARK};'
             f'mso-line-height-rule:exactly;line-height:20px;">'
             f'<strong>{el["web_name"]}</strong> <span style="color:{TEXT_MUTED};font-size:11px;">({team_short})</span>'
             f'</td>'
-            f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};text-align:right;'
-            f'mso-line-height-rule:exactly;line-height:20px;">{chips_html}</td>'
+            f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};text-align:right;">{chips_html}</td>'
             f'</tr>'
         )
 
