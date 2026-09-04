@@ -309,7 +309,7 @@ def main():
     args = parser.parse_args()
 
     supabase_url = os.environ["SUPABASE_URL"]
-    service_key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+    service_key = os.environ["SUPABASE_SERVICE_KEY"]
     gmail_address = os.environ.get("GMAIL_ADDRESS")
     gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
 
