@@ -172,11 +172,14 @@ TABLE_RESET = "border-collapse:collapse;mso-table-lspace:0pt;mso-table-rspace:0p
 def fdr_cell_style(difficulty):
     """Style string for a <td> acting as a colour badge - td background-color
     and padding are honoured far more reliably across Outlook clients than
-    the same properties on a <span>."""
+    the same properties on a <span>. Padding/line-height deliberately match
+    the surrounding text cells in fixture_row_table so every cell in a row
+    is the same height and centres identically."""
     bg, fg = FDR_COLORS.get(difficulty, ("#e0e0e0", "#333333"))
     return (
         f'background-color:{bg};color:{fg};font-size:10px;font-weight:bold;'
-        f'padding:3px 0;border-radius:4px;text-align:center;white-space:nowrap;'
+        f'padding:6px 0;line-height:14px;mso-line-height-rule:exactly;'
+        f'border-radius:4px;text-align:center;white-space:nowrap;'
     )
 
 
@@ -277,13 +280,14 @@ def fixture_row_table(f, teams_by_fpl_id, show_border):
     a = teams_by_fpl_id[f["team_a"]]["short_name"]
     dh, da = f["team_h_difficulty"], f["team_a_difficulty"]
     border = f'border-bottom:1px solid {BORDER};' if show_border else ''
+    cell_base = f'padding:6px 0;line-height:14px;mso-line-height-rule:exactly;{border}'
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}">
       <tr>
-        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{h}</td>
+        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};{cell_base}">{h}</td>
         <td width="20" align="center" valign="middle" style="{fdr_cell_style(dh)}{border}">{dh}</td>
-        <td width="26" align="center" valign="middle" style="font-size:11px;color:{TEXT_MUTED};padding:6px 2px;{border}">vs</td>
-        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{a}</td>
+        <td width="26" align="center" valign="middle" style="font-size:11px;color:{TEXT_MUTED};{cell_base}">vs</td>
+        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};{cell_base}">{a}</td>
         <td width="20" align="center" valign="middle" style="{fdr_cell_style(da)}{border}">{da}</td>
       </tr>
     </table>
@@ -365,7 +369,8 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
                     f'<table align="right" role="presentation" cellpadding="0" cellspacing="0" '
                     f'style="{TABLE_RESET}margin-bottom:2px;">'
                     f'<tr>'
-                    f'<td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:0 6px 0 0;white-space:nowrap;">{opp_short} ({venue})</td>'
+                    f'<td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 6px 6px 0;'
+                    f'line-height:14px;mso-line-height-rule:exactly;white-space:nowrap;">{opp_short} ({venue})</td>'
                     f'<td width="20" align="center" valign="middle" style="{fdr_cell_style(difficulty)}">{difficulty}</td>'
                     f'</tr></table>'
                 )
