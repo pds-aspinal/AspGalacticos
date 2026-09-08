@@ -203,10 +203,10 @@ def rank_delta_badge(rank_now, rank_before):
 
 def stat_card(value, label, sublabel_html=""):
     return f"""
-    <td width="33%" align="center" valign="top" style="background:#f4f7fb;border-radius:8px;padding:14px 6px;">
-      <div style="font-size:24px;font-weight:bold;color:{BRAND_DARK};line-height:1.1;">{value}</div>
-      <div style="margin-top:2px;">{sublabel_html}</div>
-      <div style="font-size:10px;color:{TEXT_MUTED};text-transform:uppercase;letter-spacing:.4px;margin-top:4px;">{label}</div>
+    <td width="33%" align="center" valign="top" style="background:#f4f7fb;border-radius:8px;padding:10px 6px;">
+      <div style="font-size:20px;font-weight:bold;color:{BRAND_DARK};line-height:1.1;">{value}</div>
+      <div style="margin-top:1px;">{sublabel_html}</div>
+      <div style="font-size:10px;color:{TEXT_MUTED};text-transform:uppercase;letter-spacing:.4px;margin-top:3px;">{label}</div>
     </td>
     """
 
@@ -225,7 +225,7 @@ def build_recap_section(team_id, teams, snap_now, snap_prev, all_snaps_now):
     weekly_worst = min(gw_points_all)
 
     stats_row = (
-        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}margin-bottom:14px;">'
+        f'<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}margin-bottom:10px;">'
         '<tr>'
         + stat_card(row["gw_points"], "GW Points")
         + '<td width="10" style="font-size:0;line-height:0;">&nbsp;</td>'
@@ -245,24 +245,31 @@ def build_recap_section(team_id, teams, snap_now, snap_prev, all_snaps_now):
         cells = "".join(f'<td style="padding-right:8px;">{p}</td>' for p in pills)
         badges_html = (
             f'<table role="presentation" cellpadding="0" cellspacing="0" '
-            f'style="{TABLE_RESET}margin-bottom:14px;"><tr>{cells}<td></td></tr></table>'
+            f'style="{TABLE_RESET}margin-bottom:10px;"><tr>{cells}<td></td></tr></table>'
         )
     else:
         badges_html = ""
 
+    # Only the genuinely noteworthy cases (best/worst score in the league)
+    # get a highlighted banner - the plain case is just a small footnote,
+    # not a boxed section, to keep the recap compact.
     if row["gw_points"] == weekly_best:
-        banner_bg, banner_text = "#eafaf0", f'\U0001F3C6 <strong>Highest score in the league</strong> this GW!'
+        note_html = (
+            f'<div style="background:#eafaf0;border-radius:6px;padding:8px 12px;'
+            f'font-size:12px;color:{TEXT_DARK};">\U0001F3C6 <strong>Highest score in the league</strong> this GW!</div>'
+        )
     elif row["gw_points"] == weekly_worst:
-        banner_bg, banner_text = "#fdeeee", f"Rough week \u2014 the league's high score was {weekly_best}."
+        note_html = (
+            f'<div style="background:#fdeeee;border-radius:6px;padding:8px 12px;'
+            f'font-size:12px;color:{TEXT_DARK};">Rough week \u2014 the league\'s high score was {weekly_best}.</div>'
+        )
     else:
-        banner_bg, banner_text = "#f4f7fb", f"League this GW ranged from {weekly_worst} to {weekly_best} points."
+        note_html = (
+            f'<p style="margin:2px 2px 0 2px;font-size:11px;color:{TEXT_MUTED};">'
+            f'League this GW ranged from {weekly_worst} to {weekly_best} points.</p>'
+        )
 
-    banner_html = (
-        f'<div style="background:{banner_bg};border-radius:6px;padding:10px 14px;'
-        f'font-size:13px;color:{TEXT_DARK};">{banner_text}</div>'
-    )
-
-    return stats_row + badges_html + banner_html
+    return stats_row + badges_html + note_html
 
 
 def fixture_row_table(f, teams_by_fpl_id, show_border):
@@ -273,11 +280,11 @@ def fixture_row_table(f, teams_by_fpl_id, show_border):
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}">
       <tr>
-        <td style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{h}</td>
-        <td width="20" align="center" style="{fdr_cell_style(dh)}">{dh}</td>
-        <td width="26" align="center" style="font-size:11px;color:{TEXT_MUTED};padding:6px 2px;{border}">vs</td>
-        <td style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{a}</td>
-        <td width="20" align="center" style="{fdr_cell_style(da)}">{da}</td>
+        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{h}</td>
+        <td width="20" align="center" valign="middle" style="{fdr_cell_style(dh)}{border}">{dh}</td>
+        <td width="26" align="center" valign="middle" style="font-size:11px;color:{TEXT_MUTED};padding:6px 2px;{border}">vs</td>
+        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 0;{border}">{a}</td>
+        <td width="20" align="center" valign="middle" style="{fdr_cell_style(da)}{border}">{da}</td>
       </tr>
     </table>
     """
@@ -358,18 +365,18 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
                     f'<table align="right" role="presentation" cellpadding="0" cellspacing="0" '
                     f'style="{TABLE_RESET}margin-bottom:2px;">'
                     f'<tr>'
-                    f'<td style="font-size:12px;color:{TEXT_DARK};padding:0 6px 0 0;white-space:nowrap;">{opp_short} ({venue})</td>'
-                    f'<td width="20" align="center" style="{fdr_cell_style(difficulty)}">{difficulty}</td>'
+                    f'<td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:0 6px 0 0;white-space:nowrap;">{opp_short} ({venue})</td>'
+                    f'<td width="20" align="center" valign="middle" style="{fdr_cell_style(difficulty)}">{difficulty}</td>'
                     f'</tr></table>'
                 )
             chips_html = "".join(parts)
         rows.append(
             f'<tr>'
-            f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};font-size:13px;color:{TEXT_DARK};'
+            f'<td valign="middle" style="padding:8px 0;border-bottom:1px solid {BORDER};font-size:13px;color:{TEXT_DARK};'
             f'mso-line-height-rule:exactly;line-height:20px;">'
             f'<strong>{el["web_name"]}</strong> <span style="color:{TEXT_MUTED};font-size:11px;">({team_short})</span>'
             f'</td>'
-            f'<td style="padding:8px 0;border-bottom:1px solid {BORDER};text-align:right;">{chips_html}</td>'
+            f'<td valign="middle" style="padding:8px 0;border-bottom:1px solid {BORDER};text-align:right;">{chips_html}</td>'
             f'</tr>'
         )
 
