@@ -281,14 +281,19 @@ def fixture_row_table(f, teams_by_fpl_id, show_border):
     dh, da = f["team_h_difficulty"], f["team_a_difficulty"]
     border = f'border-bottom:1px solid {BORDER};' if show_border else ''
     cell_base = f'padding:6px 0;line-height:14px;mso-line-height-rule:exactly;{border}'
+    # height="28" is an HTML attribute, not CSS - Outlook's Word engine computes
+    # row height from actual text metrics rather than reliably honouring CSS
+    # line-height on a <td>, especially when cells mix font-sizes (10px badge
+    # vs 12px team name). The explicit attribute forces every cell in the row
+    # to the same height regardless of that.
     return f"""
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="{TABLE_RESET}">
       <tr>
-        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};{cell_base}">{h}</td>
-        <td width="20" align="center" valign="middle" style="{fdr_cell_style(dh)}{border}">{dh}</td>
-        <td width="26" align="center" valign="middle" style="font-size:11px;color:{TEXT_MUTED};{cell_base}">vs</td>
-        <td valign="middle" style="font-size:12px;color:{TEXT_DARK};{cell_base}">{a}</td>
-        <td width="20" align="center" valign="middle" style="{fdr_cell_style(da)}{border}">{da}</td>
+        <td height="28" valign="middle" style="font-size:12px;color:{TEXT_DARK};{cell_base}">{h}</td>
+        <td height="28" width="20" align="center" valign="middle" style="{fdr_cell_style(dh)}{border}">{dh}</td>
+        <td height="28" width="26" align="center" valign="middle" style="font-size:11px;color:{TEXT_MUTED};{cell_base}">vs</td>
+        <td height="28" valign="middle" style="font-size:12px;color:{TEXT_DARK};{cell_base}">{a}</td>
+        <td height="28" width="20" align="center" valign="middle" style="{fdr_cell_style(da)}{border}">{da}</td>
       </tr>
     </table>
     """
@@ -369,9 +374,9 @@ def build_squad_fixture_section(team_id, next_gw_number, bootstrap, fixtures_by_
                     f'<table align="right" role="presentation" cellpadding="0" cellspacing="0" '
                     f'style="{TABLE_RESET}margin-bottom:2px;">'
                     f'<tr>'
-                    f'<td valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 6px 6px 0;'
+                    f'<td height="26" valign="middle" style="font-size:12px;color:{TEXT_DARK};padding:6px 6px 6px 0;'
                     f'line-height:14px;mso-line-height-rule:exactly;white-space:nowrap;">{opp_short} ({venue})</td>'
-                    f'<td width="20" align="center" valign="middle" style="{fdr_cell_style(difficulty)}">{difficulty}</td>'
+                    f'<td height="26" width="20" align="center" valign="middle" style="{fdr_cell_style(difficulty)}">{difficulty}</td>'
                     f'</tr></table>'
                 )
             chips_html = "".join(parts)
