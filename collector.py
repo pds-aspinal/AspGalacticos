@@ -5,6 +5,13 @@ Pulls current standings + full per-team gameweek history for a private
 FPL classic league, and upserts into Supabase. Safe to re-run any time —
 inserts are deduplicated on (gw, team_id), so nothing doubles up.
 
+Also tracks:
+  - Player price changes (by diffing today's prices against the last
+    known state stored in the `players` table)
+  - Full transfer history per manager (FPL returns each manager's
+    complete transfer log every call, so this backfills retroactively
+    on first run, then just skips duplicates)
+
 Requires three environment variables:
   SUPABASE_URL          e.g. https://xxxx.supabase.co
   SUPABASE_SERVICE_KEY  the service_role key (Project Settings > API)
@@ -16,6 +23,7 @@ Run: python collector.py
 
 import os
 import sys
+import datetime
 import requests
 
 FPL_BASE = "https://fantasy.premierleague.com/api"
@@ -30,6 +38,9 @@ CHIP_CODES = {
     "bboost": "BB",
     "3xc": "TC",
 }
+
+# FPL's element_type ids -> position codes
+POSITION_CODES = {1: "GKP", 2: "DEF", 3: "MID", 4: "FWD"}
 
 
 def env(name: str) -> str:
@@ -122,6 +133,58 @@ def fetch_team_history(team_id: int) -> list[dict]:
     return rows
 
 
+def fetch_all_players() -> list[dict]:
+    """Returns [{player_id, web_name, team_short, position, now_cost}, ...] for every player in the game.
+
+    Pulled from bootstrap-static, which is FPL's single "everything about
+    the current state of the game" endpoint. Prices here are in tenths of
+    a million (e.g. 55 -> £5.5m), same convention as team_value above.
+    """
+    data = fetch_json(f"{FPL_BASE}/bootstrap-static/")
+    team_short_by_id = {t["id"]: t["short_name"] for t in data["teams"]}
+
+    players = []
+    for p in data["elements"]:
+        players.append(
+            {
+                "player_id": p["id"],
+                "web_name": p["web_name"],
+                "team_short": team_short_by_id.get(p["team"], "UNK"),
+                "position": POSITION_CODES.get(p["element_type"], "UNK"),
+                "now_cost": round(p["now_cost"] / 10, 1),
+            }
+        )
+    return players
+
+
+def fetch_team_transfers(team_id: int) -> list[dict]:
+    """Returns every transfer a manager has ever made.
+
+    FPL returns the manager's FULL transfer history on every call (not
+    just recent ones), so this naturally backfills the whole season on
+    first run. Subsequent runs re-fetch the same list; the unique
+    constraint on (team_id, transfer_time, element_in, element_out)
+    means re-upserting is a safe no-op for anything already stored.
+    """
+    url = f"{FPL_BASE}/entry/{team_id}/transfers/"
+    data = fetch_json(url)
+
+    rows = []
+    for t in data:
+        rows.append(
+            {
+                "team_id": team_id,
+                "event": t["event"],
+                "transfer_time": t["time"],
+                "element_in": t["element_in"],
+                "element_in_cost": round(t["element_in_cost"] / 10, 1),
+                "element_out": t["element_out"],
+                "element_out_cost": round(t["element_out_cost"] / 10, 1),
+            }
+        )
+    return rows
+
+
 def supabase_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
     if not rows:
         return
@@ -137,6 +200,52 @@ def supabase_upsert(table: str, rows: list[dict], on_conflict: str) -> None:
         print(f"Supabase upsert to {table} failed: {resp.status_code} {resp.text}", file=sys.stderr)
         resp.raise_for_status()
 
+
+def supabase_select(table: str, columns: str) -> list[dict]:
+    """Simple paginated-free select — fine for tables in the hundreds/low
+    thousands of rows like `players`. Would need range headers for anything
+    bigger."""
+    url = f"{SUPABASE_URL}/rest/v1/{table}?select={columns}"
+    headers = {
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
+    }
+    resp = requests.get(url, headers=headers, timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+def sync_players_and_detect_price_changes(current_players: list[dict]) -> None:
+    """Diffs today's prices against what's stored, logs any changes, then
+    overwrites the stored state with today's prices."""
+    existing = supabase_select("players", "player_id,now_cost")
+    old_price_by_id = {row["player_id"]: row["now_cost"] for row in existing}
+
+    today = datetime.date.today().isoformat()
+    changes = []
+    for player in current_players:
+        old_price = old_price_by_id.get(player["player_id"])
+        new_price = player["now_cost"]
+        if old_price is not None and old_price != new_price:
+            changes.append(
+                {
+                    "player_id": player["player_id"],
+                    "change_date": today,
+                    "old_price": old_price,
+                    "new_price": new_price,
+                    "direction": "rise" if new_price > old_price else "fall",
+                }
+            )
+
+    if changes:
+        print(f"Detected {len(changes)} price change(s) today.")
+        supabase_upsert("price_changes", changes, on_conflict="player_id,change_date")
+    else:
+        print("No price changes detected today.")
+
+    supabase_upsert("players", current_players, on_conflict="player_id")
+
+
 def main():
     global SUPABASE_URL, SUPABASE_SERVICE_KEY
 
@@ -150,12 +259,24 @@ def main():
     supabase_upsert("teams", teams, on_conflict="team_id")
 
     all_snapshots = []
+    all_transfers = []
     for team in teams:
         print(f"  fetching history for {team['team_name']} ({team['team_id']})...")
         all_snapshots.extend(fetch_team_history(team["team_id"]))
+        all_transfers.extend(fetch_team_transfers(team["team_id"]))
 
     print(f"Upserting {len(all_snapshots)} gameweek snapshot rows...")
     supabase_upsert("gameweek_snapshots", all_snapshots, on_conflict="gw,team_id")
+
+    print(f"Upserting {len(all_transfers)} transfer rows...")
+    supabase_upsert(
+        "transfers", all_transfers, on_conflict="team_id,transfer_time,element_in,element_out"
+    )
+
+    print("Fetching all player prices...")
+    all_players = fetch_all_players()
+    print(f"Found {len(all_players)} players. Checking for price changes...")
+    sync_players_and_detect_price_changes(all_players)
 
     print("Done.")
 
