@@ -198,6 +198,7 @@
   @media (max-width: 900px) { .cups-grid { grid-template-columns: 1fr; } }
   .cup-card.cup-decided { border-top-color: var(--gold); }
   .cup-status { font-size: 0.85rem; color: var(--muted); margin: 0.4rem 0 0.7rem; }
+  .cup-subhead { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); margin: 0.2rem 0 0.2rem; }
   .cup-winner-banner {
     background: var(--gold);
     color: var(--ink);
@@ -674,11 +675,22 @@ function renderCupCard(def, teams, eliminations, matches, winner) {
     bodyHtml = `<div class="cup-status">Starts GW${def.startGw}</div>`;
   } else {
     if (cupElims.length) {
+      // Who's still alive: everyone not knocked out, minus anyone who lost a decided head-to-head match
+      if (!winner) {
+        const outIds = new Set(cupElims.map(e => e.team_id));
+        cupMatches.forEach(m => {
+          if (m.winner_team_id != null) {
+            outIds.add(m.winner_team_id === m.team1_id ? m.team2_id : m.team1_id);
+          }
+        });
+        const stillIn = teams.filter(t => !outIds.has(t.team_id));
+        bodyHtml += `<div class="cup-subhead">Still in (${stillIn.length})</div><ul class="cup-list cup-list-in">${stillIn.map(t => `<li><span>${teamName(teams, t.team_id)}</span></li>`).join("")}</ul>`;
+      }
       // Most recent elimination first, so it reads like a countdown
       const items = [...cupElims].reverse().map(e => `
         <li><span>${teamName(teams, e.team_id)}</span><span class="out-gw">GW${e.gw} · ${e.score}pts${e.tiebreak_used ? " · " + e.tiebreak_used : ""}</span></li>
       `).join("");
-      bodyHtml += `<ul class="cup-list">${items}</ul>`;
+      bodyHtml += `<div class="cup-subhead">Knocked out</div><ul class="cup-list">${items}</ul>`;
     }
     if (cupMatches.length) {
       bodyHtml += cupMatches.map(m => {
