@@ -215,6 +215,7 @@
   }
   .cup-list li:last-child { border-bottom: none; }
   .cup-list .out-gw { color: var(--muted); font-size: 0.75rem; white-space: nowrap; }
+  .cup-list-out li > span:first-child { color: #9a9a94; text-decoration: line-through; }
   .cup-match { padding: 0.4rem 0; border-bottom: 1px solid #efece0; font-size: 0.85rem; }
   .cup-match:last-child { border-bottom: none; }
   .cup-match .round-label { font-size: 0.7rem; text-transform: uppercase; color: var(--muted); letter-spacing: 0.03em; }
@@ -690,7 +691,7 @@ function renderCupCard(def, teams, eliminations, matches, winner) {
       const items = [...cupElims].reverse().map(e => `
         <li><span>${teamName(teams, e.team_id)}</span><span class="out-gw">GW${e.gw} · ${e.score}pts${e.tiebreak_used ? " · " + e.tiebreak_used : ""}</span></li>
       `).join("");
-      bodyHtml += `<div class="cup-subhead">Knocked out</div><ul class="cup-list">${items}</ul>`;
+      bodyHtml += `<div class="cup-subhead">Knocked out</div><ul class="cup-list cup-list-out">${items}</ul>`;
     }
     if (cupMatches.length) {
       bodyHtml += cupMatches.map(m => {
