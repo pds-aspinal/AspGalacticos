@@ -300,6 +300,9 @@ def main():
     print(f"Loaded {len(all_team_ids)} teams.")
 
     scores = load_scores(all_team_ids)
+    target_gw = os.environ.get("TARGET_GAMEWEEK")
+    if target_gw:
+        scores = {key: value for key, value in scores.items() if key[1] <= int(target_gw)}
     latest_gw = latest_collected_gw(scores)
     print(f"Latest gameweek with collected scores: GW{latest_gw}")
 

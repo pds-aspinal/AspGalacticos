@@ -43,7 +43,12 @@ In the repo: **Settings → Secrets and variables → Actions → New repository
 2. Check it goes green. If it fails, click in to see the error — most likely cause is a typo'd secret.
 3. In Supabase, go to **Table Editor → gameweek_snapshots** and confirm rows appeared.
 
-From here it runs automatically every Tuesday at 06:00 UTC (safely after Monday Night Football, so the gameweek's fully settled). You can also trigger it manually any time from the Actions tab.
+For automatic updates at **09:00 UK time on the day after the final gameweek fixture**,
+complete the activation steps in [scheduler/README.md](scheduler/README.md).
+This uses a separate Cloudflare Worker to trigger GitHub Actions and replaces
+the old Tuesday cron. It requires the Supabase delivery-state migration and a
+repository-scoped GitHub token before activation. Manual workflow runs now
+require a completed gameweek number and the season start year.
 
 ## 5. Wire up and publish the dashboard
 

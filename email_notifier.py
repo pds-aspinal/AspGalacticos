@@ -19,7 +19,7 @@ Environment variables required:
   GMAIL_APP_PASSWORD           16-character app password (no spaces)
 
 Usage:
-  python email_notifier.py                 # normal run, sends to all active managers
+  python run_update.py                     # production workflow (uses TARGET_GAMEWEEK/TARGET_SEASON)
   python email_notifier.py --dry-run       # builds emails, prints them, sends nothing
   python email_notifier.py --test-to me@x.com   # sends ALL emails to one address instead
                                                   (subject line tags which manager it was for)
@@ -35,6 +35,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 import requests
+from update_state import claim_email, mark_email_sent
 
 FPL_BASE = "https://fantasy.premierleague.com/api"
 DASHBOARD_URL = "https://aspgalacticos.pages.dev"
@@ -485,7 +486,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--dry-run", action="store_true", help="Build emails but don't send anything")
     parser.add_argument("--test-to", default=None, help="Send every email to this address instead of real recipients")
+    parser.add_argument("--gameweek", type=int, help="Explicit completed gameweek to recap")
+    parser.add_argument("--season", help="Season start year for delivery tracking")
     args = parser.parse_args()
+    if not args.dry_run and not args.test_to and (not args.gameweek or not args.season):
+        parser.error("Production delivery requires --gameweek and --season; use run_update.py")
 
     supabase_url = os.environ["SUPABASE_URL"]
     service_key = os.environ["SUPABASE_SERVICE_KEY"]
@@ -496,7 +501,7 @@ def main():
         sys.exit("GMAIL_ADDRESS and GMAIL_APP_PASSWORD must be set unless using --dry-run")
 
     print("Fetching league data from Supabase...")
-    current_gw = get_current_gw(supabase_url, service_key)
+    current_gw = args.gameweek or get_current_gw(supabase_url, service_key)
     next_gw = current_gw + 1
     teams = get_teams(supabase_url, service_key)
     emails = get_manager_emails(supabase_url, service_key)
@@ -539,7 +544,13 @@ def main():
             continue
 
         try:
+            if not args.test_to and not claim_email(args.season, current_gw, team_id):
+                print(f"Already sent GW{current_gw} to {team['team_name']}; skipping")
+                skipped += 1
+                continue
             send_email(gmail_address, gmail_app_password, destination, subject, body)
+            if not args.test_to:
+                mark_email_sent(args.season, current_gw, team_id)
             print(f"Sent to {destination} ({team['team_name']})")
             sent += 1
         except Exception as e:

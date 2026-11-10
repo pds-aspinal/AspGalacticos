@@ -1,0 +1,17 @@
+name = "aspgalacticos-scheduler"
+main = "worker.mjs"
+compatibility_date = "2026-11-01"
+
+[triggers]
+crons = ["*/10 * * * *"]
+
+[vars]
+GITHUB_REPOSITORY = "pds-aspinal/AspGalacticos"
+GITHUB_REF = "main"
+# Set to the next gameweek that has NOT already been emailed before deploying.
+MIN_GAMEWEEK = "11"
+
+[observability]
+enabled = true
+
+# Add GITHUB_TOKEN as a Worker secret, scoped to this repository, Actions read/write.
