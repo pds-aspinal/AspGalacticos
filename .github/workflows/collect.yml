@@ -1,16 +1,22 @@
 name: Collect FPL standings
-run-name: GW recap ${{ inputs.season }} GW${{ inputs.gameweek }}
+run-name: ${{ inputs.gameweek && format('GW recap {0} GW{1}', inputs.season, inputs.gameweek) || 'GW update check' }}
 
 on:
+  schedule:
+    # Hourly 08:17-18:17 UTC (covers 09:17+ UK in both GMT and BST). Most runs are a
+    # quick no-op; the first one after a gameweek is final AND due (09:00 UK the day
+    # after the last fixture) does the real update. Offset minute avoids the
+    # top-of-hour congestion that makes GitHub cron slots flaky.
+    - cron: "17 8-18 * * *"
   workflow_dispatch:
     inputs:
       gameweek:
-        description: "Completed FPL gameweek to process (1-38)"
-        required: true
+        description: "Leave BLANK to auto-detect the next finished gameweek, or enter 1-38 to force one"
+        required: false
         type: string
       season:
-        description: "Season start year, e.g. 2026 for 2026/27"
-        required: true
+        description: "Season start year, e.g. 2026 for 2026/27 (blank = current season)"
+        required: false
         type: string
 
 concurrency:
